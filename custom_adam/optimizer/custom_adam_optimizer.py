@@ -76,7 +76,7 @@ class CustomAdam(Optimizer):
                 state = self.state[p]
 
                 # State initialization
-                if len(state) == 0:
+                if (len(state) == 0  or state["exp_avg"].shape != p.shape or state["exp_avg_sq"].shape != p.shape):
                     state["step"] = 0
                     # Exponential moving average of gradient values
                     state["exp_avg"] = torch.zeros_like(p, memory_format=torch.preserve_format)
