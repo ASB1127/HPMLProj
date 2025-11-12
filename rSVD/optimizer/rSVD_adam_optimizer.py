@@ -259,8 +259,6 @@ class rSVDAdam(Optimizer):
                     U, S, Vh = torch.svd_lowrank(G_mat, q=q, niter=power_iters)
                     # Take first r left singular vectors
                     P = U[:, :r].contiguous()
-                    # Simple sanity: columns should be orthonormal-ish
-                    # (P^T P ≈ I_r); we won't assert strictly to avoid numerical issues
                     state["proj"] = P
 
                 else:
