@@ -82,3 +82,93 @@ celerybeat-schedule # Celery
 .mypy_cache/       # Mypy
 .dmypy.json
 dmypy.json
+MNIST/
+
+# ===========================
+#  HuggingFace Datasets & Cache
+# ===========================
+# HF datasets downloaded by load_dataset()
+cache/
+dataset_cache/
+~/.cache/huggingface/
+~/.cache/datasets/
+~/.cache/huggingface/hub/
+huggingface/
+
+# If running inside a container, keep local HF cache ignored:
+.cache/
+
+# ===========================
+#  HuggingFace Training Outputs
+# ===========================
+# These get huge! (checkpoints, metrics, logs)
+runs/
+wandb/
+lightning_logs/
+tensorboard/
+output/
+checkpoints/
+results/
+
+# HuggingFace Trainer output_dir (default: ./results or custom dir)
+**/trainer_state.json
+**/checkpoint-*/
+**/pytorch_model.bin
+**/pytorch_model*.bin
+**/optimizer.pt
+**/scheduler.pt
+**/trainer*
+**/config.json
+**/training_args.bin
+
+# ===========================
+#  Model Weights (Do NOT commit!)
+# ===========================
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# LoRA adapters saved with PEFT
+adapter*
+*adapter_model*
+*adapter_config*
+
+# ===========================
+#  Tokenizers & Vocab files
+# ===========================
+tokenizer_config.json
+special_tokens_map.json
+vocab.txt
+merges.txt
+
+# ===========================
+#  Jupyter
+# ===========================
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+*.ipynb
+
+# ===========================
+#  Temporary files
+# ===========================
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Tensorboard profiler traces
+*.json.gz
+*.trace.json
+*.pt.trace.json
+
+# PyTorch profiler output
+profiler_output/
+
+# ===========================
+#  Environment / IDE / OS
+# ===========================
+.DS_Store
+.swp
+.idea/
+.vscode/
