@@ -82,3 +82,4 @@ celerybeat-schedule # Celery
 .mypy_cache/       # Mypy
 .dmypy.json
 dmypy.json
+MNIST/
