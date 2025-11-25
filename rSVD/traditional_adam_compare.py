@@ -269,4 +269,4 @@ plt.title("Training Loss: Adam vs rSVDAdam (with rSVD)")
 plt.legend()
 plt.grid(True)
 plt.show()
-
+plt.savefig("loss_comparison.png", dpi=300, bbox_inches="tight")
