@@ -1,5 +1,7 @@
+from re import A
 import sys, os
 import numpy as np
+from torch.optim import AdamW
 import evaluate
 
 
@@ -7,7 +9,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 from datasets import load_dataset
 from torch.profiler import profile, ProfilerActivity
-
+from torch.optim.lr_scheduler import LambdaLR
 from transformers import AutoTokenizer
 from peft import LoraConfig, get_peft_model
 from transformers import TrainingArguments, Trainer
@@ -72,30 +74,37 @@ args = TrainingArguments(
     fp16 = False,
     bf16 = False,
 )
-
+optimizer = CustomAdam(model.parameters(), lr=2e-4)
+scheduler = LambdaLR(optimizer, lambda _: 1.0)
 trainer = Trainer(
     model=model,
     args=args,
     train_dataset=tokenized_ds["train"],
     eval_dataset=tokenized_ds["validation"],
     tokenizer=tokenizer,
-    optimizers=(CustomAdam(model.parameters(), lr=2e-4), None),
     compute_metrics=compute_metrics,
+    optimizers=(optimizer, scheduler),
 )
 
-# ---------------------------------------------------------------
-# ✔ PREPARE ONE BATCH FOR PROFILING
-# ---------------------------------------------------------------
 train_dataloader = trainer.get_train_dataloader()
+
+for _ in range(2):
+    batch = next(iter(train_dataloader))
+    batch = {k: v.to(device) for k, v in batch.items()}
+    optimizer.zero_grad()
+    out = model(**batch)
+    out.loss.backward()
+    optimizer.step()
+
+torch.cuda.synchronize()
+
+
 batch = next(iter(train_dataloader))
 batch = {k: v.to(device) for k, v in batch.items()}
 
-optimizer = CustomAdam(model.parameters(), lr=2e-4)
-model.train()
 
-# ---------------------------------------------------------------
-# ✔ PROFILE ONE TRAINING STEP
-# ---------------------------------------------------------------
+
+
 with profile(
     activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
     record_shapes=True,
@@ -108,11 +117,10 @@ with profile(
     loss.backward()
     optimizer.step()
 
-# ---------------------------------------------------------------
-# ✔ NORMAL TRAINING LOOP
-# ---------------------------------------------------------------
 trainer.train()
 trainer.evaluate()
+
+
 
 print("\n=== TIME (CUDA) ===")
 print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
@@ -120,9 +128,6 @@ print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 print("\n=== GPU MEMORY ===")
 print(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=20))
 
-# ---------------------------------------------------------------
-# ✔ EXPORT PROFILER RESULTS TO FILE
-# ---------------------------------------------------------------
 with open("profile_cuda_time.txt", "w") as f:
     f.write(prof.key_averages().table(sort_by="cuda_time_total", row_limit=200))
 
