@@ -1,0 +1,8 @@
+services:
+  runpod-cuda:
+    platform: linux/amd64 
+    build:
+      context: .          
+      dockerfile: Dockerfile
+    image: amitsinghbal27/vastai:latest
+
