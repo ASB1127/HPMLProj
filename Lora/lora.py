@@ -120,6 +120,19 @@ print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 print("\n=== GPU MEMORY ===")
 print(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=20))
 
+# ---------------------------------------------------------------
+# ✔ EXPORT PROFILER RESULTS TO FILE
+# ---------------------------------------------------------------
+with open("profile_cuda_time.txt", "w") as f:
+    f.write(prof.key_averages().table(sort_by="cuda_time_total", row_limit=200))
+
+with open("profile_cuda_memory.txt", "w") as f:
+    f.write(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=200))
+
+# Optional: Chrome trace
+prof.export_chrome_trace("profile_trace.json")
+
+
 model.save_pretrained("distilbert-sst2-lora")
 
 model = model.merge_and_unload()
