@@ -109,7 +109,7 @@ def train_epoch(model, loader, optimizer, device, rsvd_projector):
         for step, batch in enumerate(progress_bar):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
-            labels = batch["label"].to(device)
+            labels = batch["labels"].to(device)
         
             outputs = model(
                 input_ids=input_ids,
@@ -160,7 +160,7 @@ def evaluate(model, loader, device):
         for batch in progress_bar:
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
-            labels = batch["label"].to(device)
+            labels = batch["labels"].to(device)
             
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
             logits = outputs.logits
