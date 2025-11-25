@@ -1,7 +1,7 @@
 import math
 import torch
 from torch.optim.optimizer import Optimizer
-
+from torch.profiler import profile, record_function, ProfilerActivity
 
 class CustomAdam(Optimizer):
     r"""
@@ -47,6 +47,10 @@ class CustomAdam(Optimizer):
 
     @torch.no_grad()
     def step(self, closure=None):
+       with record_function("CustomAdam.step"):
+        return self.profile_step(closure)
+    
+    def profile_step(self, closure=None):
         """Performs a single optimization step."""
         loss = None
         if closure is not None:

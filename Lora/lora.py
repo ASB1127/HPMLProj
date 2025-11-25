@@ -1,11 +1,28 @@
+import sys, os
+import numpy as np
+import evaluate
+
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, PROJECT_ROOT)
 from datasets import load_dataset
+from torch.profiler import profile, ProfilerActivity
+
 from transformers import AutoTokenizer
 from peft import LoraConfig, get_peft_model
 from transformers import TrainingArguments, Trainer
 from transformers import AutoModelForSequenceClassification
+from custom_adam.optimizer.custom_adam_optimizer import CustomAdam
+
 
 
 import torch
+
+accuracy_metric = evaluate.load("accuracy")
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    preds = np.argmax(logits, axis=-1)
+    return accuracy_metric.compute(predictions=preds, references=labels)
 
 device = (
     "mps" if torch.backends.mps.is_available()
@@ -24,6 +41,8 @@ tokenized_ds = tokenized_ds.rename_column("label", "labels")
 tokenized_ds.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
 
 
+
+
 base_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
 
 lora_config = LoraConfig(
@@ -40,7 +59,7 @@ model.print_trainable_parameters()
 model = model.to(device)
 
 args = TrainingArguments(
-        output_dir="./distilbert-sst2-lora",
+    output_dir="./distilbert-sst2-lora",
     per_device_train_batch_size=32,
     per_device_eval_batch_size=64,
     num_train_epochs=3,
@@ -60,9 +79,25 @@ trainer = Trainer(
     train_dataset=tokenized_ds["train"],
     eval_dataset=tokenized_ds["validation"],
     tokenizer=tokenizer,
+    optimizers=(CustomAdam(model.parameters(), lr=2e-4), None),
+    compute_metrics=compute_metrics,
 )
 
-trainer.train()
+with profile(
+    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    record_shapes=True,
+    profile_memory=True,
+    with_stack=True,
+) as prof:
+    trainer.train() 
+
+trainer.evaluate()
+
+print("\n=== TIME (CUDA) ===")
+print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
+
+print("\n=== GPU MEMORY ===")
+print(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=20))
 
 model.save_pretrained("distilbert-sst2-lora")
 
