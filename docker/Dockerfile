@@ -13,9 +13,11 @@ ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
 
 # Optional developer tools
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends vim htop git && \
+    apt-get install -y --no-install-recommends \
+        vim htop git python3-scipy && \
     rm -rf /var/lib/apt/lists/*
 
-# Keep RunPod entrypoint so the container stays alive on launch
-# (runpod/pytorch sets ENTRYPOINT ["/start.sh"])
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir \
+        numpy matplotlib pandas jupyterlab transformers datasets scikit-learn hf-transfer evaluate peft
 
