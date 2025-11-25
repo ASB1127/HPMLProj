@@ -83,14 +83,35 @@ trainer = Trainer(
     compute_metrics=compute_metrics,
 )
 
+# ---------------------------------------------------------------
+# ✔ PREPARE ONE BATCH FOR PROFILING
+# ---------------------------------------------------------------
+train_dataloader = trainer.get_train_dataloader()
+batch = next(iter(train_dataloader))
+batch = {k: v.to(device) for k, v in batch.items()}
+
+optimizer = CustomAdam(model.parameters(), lr=2e-4)
+model.train()
+
+# ---------------------------------------------------------------
+# ✔ PROFILE ONE TRAINING STEP
+# ---------------------------------------------------------------
 with profile(
     activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
     record_shapes=True,
     profile_memory=True,
-    with_stack=True,
 ) as prof:
-    trainer.train() 
 
+    optimizer.zero_grad()
+    outputs = model(**batch)
+    loss = outputs.loss
+    loss.backward()
+    optimizer.step()
+
+# ---------------------------------------------------------------
+# ✔ NORMAL TRAINING LOOP
+# ---------------------------------------------------------------
+trainer.train()
 trainer.evaluate()
 
 print("\n=== TIME (CUDA) ===")
@@ -103,3 +124,4 @@ model.save_pretrained("distilbert-sst2-lora")
 
 model = model.merge_and_unload()
 model.save_pretrained("distilbert-sst2-full")
+
