@@ -1,23 +1,48 @@
-# Stage 1: get CUDA developer tools from NVIDIA
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS cuda
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
-# Stage 2: use RunPod image for entrypoint + environment
-FROM runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404
+# -----------------------------
+# System deps
+# -----------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev git curl ca-certificates openssh-server \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy CUDA toolkit into RunPod image
-COPY --from=cuda /usr/local/cuda /usr/local/cuda
+# SSH setup (optional)
+RUN mkdir -p /var/run/sshd
 
-# Expose CUDA binaries and libraries inside container
-ENV PATH="/usr/local/cuda/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
+EXPOSE 22
 
-# Optional developer tools
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        vim htop git python3-scipy && \
-    rm -rf /var/lib/apt/lists/*
+# -----------------------------
+# Python deps
+# -----------------------------
+RUN pip3 install --no-cache-dir --upgrade pip
 
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir \
-        numpy matplotlib pandas jupyterlab transformers datasets scikit-learn hf-transfer evaluate peft
+# Install PyTorch CUDA wheels (fast, official)
+RUN pip3 install --no-cache-dir \
+    torch==2.2.2+cu121 \
+    torchvision==0.17.2+cu121 \
+    torchaudio==2.2.2+cu121 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# HF + required libs
+RUN pip3 install --no-cache-dir \
+    transformers>=4.30.0 \
+    datasets>=2.12.0 \
+    evaluate \
+    peft>=0.5.0 \
+    numpy>=1.24.0 \
+    tqdm>=4.65.0 \
+    accelerate \
+    huggingface_hub
+
+# -----------------------------
+# Copy project
+# -----------------------------
+WORKDIR /workspace
+COPY . /workspace
+
+# -----------------------------
+# SSHD entrypoint
+# -----------------------------
+CMD ["/usr/sbin/sshd", "-D"]
 
