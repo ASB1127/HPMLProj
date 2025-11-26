@@ -1,232 +1,170 @@
-import sys
-import os
+from re import A
+import sys, os
+import numpy as np
+import evaluate
 import gc
 
-# Add project root to sys.path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if project_root not in sys.path:
-    sys.path.append(project_root)
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, PROJECT_ROOT)
 
-from custom_adam.optimizer import CustomAdam
-from rsvd_svt import RandomizedSVDGradientProjector
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-from transformers import (
-    AutoTokenizer, 
-    AutoModelForSequenceClassification,
-    DataCollatorWithPadding
-)
 from datasets import load_dataset
-import numpy as np
-from tqdm import tqdm
-import os
-from rSVD.utils import (
-    get_device, reset_memory_stats, get_peak_memory_mb,
-    get_current_memory_mb, extract_timing_stats, 
-    get_profiler_activities)
-from torch.profiler import profile
+from torch.profiler import profile, ProfilerActivity
+from torch.optim.lr_scheduler import LambdaLR
+from transformers import AutoTokenizer
+from transformers import TrainingArguments, Trainer, TrainerCallback
+from transformers import AutoModelForSequenceClassification
+from transformers import DataCollatorWithPadding
+from rsvd_svt import rSVDSVTAdam
+import torch
+
+class ProfilerCallback(TrainerCallback):
+    def __init__(self, profile_steps=100):
+        self.profiler = None
+        self.profile_steps = profile_steps
+        self.epoch_num = 0
+        self.step_in_epoch = 0
+        self.profiling_active = False
+        
+    def on_epoch_begin(self, args, state, control, **kwargs): 
+        self.step_in_epoch = 0
+        self.profiling_active = False
+
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
+        self.profiler = profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            record_shapes=False,
+            profile_memory=True,
+            with_stack=False
+        )
+        self.profiler.__enter__()
+        self.profiling_active = True
+        print(f"\n=== Started profiling Epoch {self.epoch_num + 1} (first {self.profile_steps} steps) ===")
 
 
-device = get_device()
+    def on_step_end(self, args, state, control, **kwargs):
+        if self.profiling_active:
+            self.step_in_epoch += 1
 
-# Model, tokenizer, and dataset
-model_name = "bert-base-uncased"
-max_length = 256
-batch_size = 32
-num_epochs = 3
+            if self.step_in_epoch >= self.profile_steps:
+                self.profiler.__exit__(None, None, None)
+                self.profiling_active = False
 
-# ============================================================
-# Load Dataset
-# ============================================================
+                epoch_label = self.epoch_num + 1
+
+                with open(f"./profile_cuda_time_epoch_{epoch_label}.txt", "w") as f:
+                    f.write(self.profiler.key_averages().table(sort_by="cuda_time_total", row_limit=200))
+                
+                with open(f"./profile_cuda_memory_epoch_{epoch_label}.txt", "w") as f:
+                    f.write(self.profiler.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=200))
+                
+                print(f"\n=== Epoch {epoch_label} Profile Saved ===")
+                print("\n=== TOP 10 TIME (CUDA) ===")
+                print(self.profiler.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+
+                print("\n=== TOP 10 GPU MEMORY ===")
+                print(self.profiler.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=10))
+
+                trace_file = f"./trace_epoch_{epoch_label}.json"
+                self.profiler.export_chrome_trace(trace_file)
+
+                self.profiler = None
+                torch.cuda.empty_cache()
+    
+    def on_epoch_end(self, args, state, control, **kwargs):
+        if self.profiling_active and self.profiler:
+            self.profiler.__exit__(None, None, None)
+            self.profiling_active = False
+
+            self.profiler = None
+            torch.cuda.empty_cache()
+        
+        self.epoch_num += 1
+            
+
+
+accuracy_metric = evaluate.load("accuracy")
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    preds = np.argmax(logits, axis=-1)
+    return accuracy_metric.compute(predictions=preds, references=labels)
+
+device = (
+    "mps" if torch.backends.mps.is_available()
+    else "cuda" if torch.cuda.is_available()
+    else "cpu"
+)
+
 dataset = load_dataset("imdb")
-tokenizer = AutoTokenizer.from_pretrained(
-    model_name
-)
+model_name = "distilbert-base-uncased"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-def tokenize_function(examples):
-    return tokenizer(
-        examples["text"],
-        truncation=True,
-        padding=False,
-        max_length=max_length
-    )
+def tokenize_fn(examples):
+    return tokenizer(examples["text"], truncation=True, padding="max_length", max_length=128)
+tokenized_ds = dataset.map(tokenize_fn, batched=True)
 
-tokenized_datasets = dataset.map(
-    tokenize_function,
-    batched=True,
-    remove_columns=['text']
-)
-
+tokenized_ds = tokenized_ds.rename_column("label", "labels")
+tokenized_ds.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
 data_collator = DataCollatorWithPadding(tokenizer, return_tensors="pt")
 
-train_loader = DataLoader(
-    tokenized_datasets["train"],
-    batch_size=batch_size,
-    shuffle=True,
-    collate_fn=data_collator,
-    pin_memory=False,  
-    num_workers=0, 
-)
 
-test_loader = DataLoader(
-    tokenized_datasets["test"],
-    batch_size=batch_size,
-    shuffle=False,
-    collate_fn=data_collator,
-    pin_memory=False,
-    num_workers=0,
-)
-
-model = AutoModelForSequenceClassification.from_pretrained(
-    model_name,
-    num_labels=2,  
-    output_attentions=False,
-    output_hidden_states=False
-)
+model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
 model.to(device)
 
-optimizer = CustomAdam(params = model.parameters())
+args = TrainingArguments(
+    output_dir="./distilbert-imdb-rsvd-svt",
+    per_device_train_batch_size=32,
+    per_device_eval_batch_size=64,
+    num_train_epochs=3,
+    learning_rate=2e-4,
+    eval_strategy="epoch",
+    save_strategy="epoch",
+    load_best_model_at_end=True,
+    logging_steps=50,
+    report_to="none",
+    fp16 = False,
+    bf16 = False,
+)
 
-def train_epoch(model, loader, optimizer, device, rsvd_projector):
-    """Train for one epoch."""
-    reset_memory_stats(device)
+optimizer = rSVDSVTAdam(
+    model.parameters(),
+    lr=2e-4,
+    rank_fraction=0.3, # Tune this
+    proj_interval=500, # Per Atith
+    use_rgp=True, # Per Atith
+    weight_decay=0.01, # Per Atith
+    decoupled_weight_decay=True,  
+    verbose_memory_once=True
+)
 
-    model.train()
-    total_loss = 0.0
-    correct = 0
-    total = 0
+scheduler = LambdaLR(optimizer, lambda _: 1.0)
+trainer = Trainer(
+    model=model,
+    args=args,
+    train_dataset=tokenized_ds["train"],
+    eval_dataset=tokenized_ds["test"],
+    tokenizer=tokenizer,
+    compute_metrics=compute_metrics,
+    optimizers=(optimizer, scheduler),
+    data_collator=data_collator,
+    callbacks=[ProfilerCallback(profile_steps=50)]
+)
 
-    profile_results = None
-    activities = get_profiler_activities(device)
+train_dataloader = trainer.get_train_dataloader()
 
-    prof = None
-    with profile(
-        activities=activities,
-        profile_memory=True,
-    ) as prof:
-        progress_bar = tqdm(loader, desc="Training")
-        for step, batch in enumerate(progress_bar):
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
-        
-            outputs = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                labels=labels
-            )
-            logits = outputs.logits
-            loss = outputs.loss
+for _ in range(2):
+    batch = next(iter(train_dataloader))
+    batch = {k: v.to(device) for k, v in batch.items()}
+    optimizer.zero_grad()
+    out = model(**batch)
+    out.loss.backward()
+    optimizer.step()
+    del batch, out
+    torch.cuda.empty_cache()
+    gc.collect()
 
-            optimizer.zero_grad()
-            loss.backward()
+torch.cuda.synchronize()
 
-            rsvd_projector.step(model)
-            optimizer.step()
-        
-            predictions = torch.argmax(logits, dim=-1)
-            correct += (predictions == labels).sum().item()
-            total += labels.size(0)
-            total_loss += loss.item()
-        
-            progress_bar.set_postfix({
-                'loss': f'{total_loss / (step + 1):.4f}',
-                'acc': f'{100 * correct / total:.2f}%'
-            })
-    
-    accuracy = correct / total
-
-    peak_mem = get_peak_memory_mb(device)
-    if peak_mem is not None:
-        profile_results = {
-            'peak_memory_mb': peak_mem,
-            'profiler': prof
-        }
-    else:
-        profile_results = {'profiler': prof}
-
-    return total_loss, accuracy, profile_results
-
-
-def evaluate(model, loader, device):
-    """Evaluate the model."""
-    model.eval()
-    correct = 0
-    total = 0
-    
-    with torch.no_grad():
-        progress_bar = tqdm(loader, desc="Evaluating")
-        for batch in progress_bar:
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
-            
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            logits = outputs.logits
-            
-            preds = logits.argmax(dim=1)
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
-            
-            progress_bar.set_postfix({
-                'acc': f'{100 * correct / total:.2f}%'
-            })
-    
-    accuracy = correct / total
-    return accuracy
-
-train_losses = []
-train_accs = []
-val_accs = []
-
-best_val_acc = 0.0
-
-initial_memory = get_current_memory_mb(device)
-if initial_memory is not None:
-    print(f"Initial GPU memory: {initial_memory:.2f} MB")
-
-# Tune This: 64, 128, 256
-ranks = [64]
-
-
-for rank in ranks:
-    rsvd_projector = RandomizedSVDGradientProjector(
-        rank=rank, 
-    )   
-    for epoch in range(1, num_epochs + 1): 
-        # Train
-        train_loss, train_acc, profile_results = train_epoch(
-            model, train_loader, optimizer, device, rsvd_projector
-        )
-        train_losses.append(train_loss)
-        train_accs.append(train_acc)
-    
-        # Evaluate
-        val_acc = evaluate(model, test_loader, device)
-        val_accs.append(val_acc)
-    
-        # Print epoch summary
-        print(f"\nEpoch {epoch} Summary:")
-        print(f"  Train Loss: {train_loss:.4f} | Train Acc: {train_acc*100:.2f}%")
-        print(f"  Val Acc:   {val_acc*100:.2f}%")
-
-        if profile_results:
-            peak_memory = profile_results.get('peak_memory_mb', 0)
-            print(f"Memory Usage (Peak): {peak_memory:.3f}")   
-
-        timing_stats = extract_timing_stats(
-            profile_results['profiler'] if profile_results else None, device, "Profiler Results") 
-
-        if device.startswith("cuda") and torch.cuda.is_available():
-            if 'cuda_time_ms' in timing_stats:
-                cuda_time = timing_stats['cuda_time_ms']
-            print(f"Overall Epoch CUDA Time: {cuda_time:.3f}")
-    
-        if 'cpu_time_ms' in timing_stats:
-            cpu_time = timing_stats['cpu_time_ms'] 
-            print(f"Overall Epoch CPU Time: {cpu_time:.3f}")
-        
-        del profile_results
-        gc.collect()
-        torch.cuda.empty_cache()
+trainer.train()
+trainer.evaluate()
