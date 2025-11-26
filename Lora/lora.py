@@ -64,7 +64,7 @@ args = TrainingArguments(
     output_dir="./distilbert-sst2-lora",
     per_device_train_batch_size=32,
     per_device_eval_batch_size=64,
-    num_train_epochs=3,
+    num_train_epochs=1,
     learning_rate=2e-4,
     eval_strategy="epoch",
     save_strategy="epoch",
@@ -104,17 +104,15 @@ batch = {k: v.to(device) for k, v in batch.items()}
 
 
 
-
+optimizer.zero_grad()
+outputs = model(**batch)
+loss = outputs.loss
+loss.backward()
 with profile(
     activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
     record_shapes=True,
     profile_memory=True,
 ) as prof:
-
-    optimizer.zero_grad()
-    outputs = model(**batch)
-    loss = outputs.loss
-    loss.backward()
     optimizer.step()
 
 trainer.train()
