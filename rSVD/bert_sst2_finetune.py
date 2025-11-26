@@ -1,5 +1,5 @@
 """
-Fine-tune BERT-base-uncased on IMDB Sentiment Classification using rSVDAdam optimizer.
+Fine-tune BERT-base-uncased on SST-2 Sentiment Classification using rSVDAdam optimizer.
 """
 import torch
 from transformers import (
@@ -42,7 +42,7 @@ use_rgp = True
 
 # Evaluation
 eval_batch_size = 32
-save_dir = "./bert_imdb_checkpoints"
+save_dir = "./bert_sst2_checkpoints"
 os.makedirs(save_dir, exist_ok=True)
 
 print(f"Using device: {device}")
@@ -53,8 +53,8 @@ print(f"Batch size: {batch_size} (effective: {batch_size * gradient_accumulation
 # ============================================================
 # Load Dataset
 # ============================================================
-print("\nLoading IMDB dataset...")
-dataset = load_dataset("imdb")
+print("\nLoading SST-2 dataset...")
+dataset = load_dataset("glue", "sst2")
 
 
 # Tokenizer
@@ -63,7 +63,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 def tokenize_function(examples):
     """Tokenize the examples."""
     return tokenizer(
-        examples["text"],
+        examples["sentence"],
         truncation=True,
         padding="max_length",
         max_length=max_length
@@ -73,16 +73,16 @@ print("Tokenizing dataset...")
 tokenized_train = dataset["train"].map(
     tokenize_function,
     batched=True,
-    remove_columns=["text"]
+    remove_columns=["sentence", "idx"]
 )
-tokenized_test = dataset["test"].map(
+tokenized_val = dataset["validation"].map(
     tokenize_function,
     batched=True,
-    remove_columns=["text"]
+    remove_columns=["sentence", "idx"]
 )
 
 print(f"Train samples: {len(tokenized_train)}")
-print(f"Test samples: {len(tokenized_test)}")
+print(f"Validation samples: {len(tokenized_val)}")
 
 # ============================================================
 # Load Model
@@ -104,7 +104,7 @@ print(f"Trainable parameters: {param_counts['trainable']:,}")
 # ============================================================
     # Convert to PyTorch format for Trainer compatibility
 tokenized_train.set_format("torch", columns=["input_ids", "attention_mask", "label"])
-tokenized_test.set_format("torch", columns=["input_ids", "attention_mask", "label"])
+tokenized_val.set_format("torch", columns=["input_ids", "attention_mask", "label"])
 
 
 # ============================================================
@@ -175,7 +175,7 @@ trainer = RsvdTrainer(
     model=model,
     args=training_args,
     train_dataset=tokenized_train,
-    eval_dataset=tokenized_test,
+    eval_dataset=tokenized_val,
     tokenizer=tokenizer,
     compute_metrics=compute_metrics,
 )
