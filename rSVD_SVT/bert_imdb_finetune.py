@@ -47,56 +47,11 @@ class ProfilerCallback(TrainerCallback):
         if self.profiling_active:
             self.step_in_epoch += 1
 
-optimizer = CustomAdam(params = model.parameters())
+            if self.step_in_epoch >= self.profile_steps:
+                self.profiler.__exit__(None, None, None)
+                self.profiling_active = False
 
-def train_epoch(model, loader, optimizer, device, rsvd_projector):
-    """Train for one epoch."""
-    reset_memory_stats(device)
-
-    model.train()
-    total_loss = 0.0
-    correct = 0
-    total = 0
-
-    profile_results = None
-    activities = get_profiler_activities(device)
-
-    prof = None
-    with profile(
-        activities=activities,
-        profile_memory=True,
-    ) as prof:
-        progress_bar = tqdm(loader, desc="Training")
-        for step, batch in enumerate(progress_bar):
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
-        
-            outputs = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                labels=labels
-            )
-            logits = outputs.logits
-            loss = outputs.loss
-
-            optimizer.zero_grad()
-            loss.backward()
-
-            rsvd_projector.step(model)
-            optimizer.step()
-        
-            predictions = torch.argmax(logits, dim=-1)
-            correct += (predictions == labels).sum().item()
-            total += labels.size(0)
-            total_loss += loss.item()
-        
-            progress_bar.set_postfix({
-                'loss': f'{total_loss / (step + 1):.4f}',
-                'acc': f'{100 * correct / total:.2f}%'
-            })
-    
-    accuracy = correct / total
+                epoch_label = self.epoch_num + 1
 
                 with open(f"./profile_cuda_time_epoch_{epoch_label}.txt", "w") as f:
                     f.write(self.profiler.key_averages().table(sort_by="cuda_time_total", row_limit=200))
@@ -117,19 +72,6 @@ def train_epoch(model, loader, optimizer, device, rsvd_projector):
                 self.profiler = None
                 torch.cuda.empty_cache()
     
-    with torch.no_grad():
-        progress_bar = tqdm(loader, desc="Evaluating")
-        for batch in progress_bar:
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
-            
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            logits = outputs.logits
-            
-            preds = logits.argmax(dim=1)
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
     def on_epoch_end(self, args, state, control, **kwargs):
         if self.profiling_active and self.profiler:
             self.profiler.__exit__(None, None, None)
