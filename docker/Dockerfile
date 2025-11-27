@@ -33,7 +33,9 @@ RUN pip3 install --no-cache-dir \
     numpy>=1.24.0 \
     tqdm>=4.65.0 \
     accelerate \
-    huggingface_hub
+    huggingface_hub \
+    numpy  \
+    scikit-learn
 
 # -----------------------------
 # Copy project
