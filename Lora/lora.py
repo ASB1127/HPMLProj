@@ -23,9 +23,30 @@ from custom_adam.optimizer.custom_adam_optimizer import CustomAdam
 
 import torch
 
+class MemoryPeakPerEpochCallback(TrainerCallback):
+    def __init__(self, csv_path="epoch_peak_memory.csv"):
+        self.csv_path = csv_path
 
+        # Write CSV header once
+        with open(self.csv_path, "w") as f:
+            f.write("epoch,peak_memory_bytes\n")
 
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
 
+    def on_epoch_end(self, args, state, control, **kwargs):
+        if torch.cuda.is_available():
+            peak = torch.cuda.max_memory_allocated()
+
+            # Print to console
+            print(f"[Epoch {int(state.epoch)}] Peak CUDA Memory: {peak/1e6:.2f} MB")
+
+            # Write to CSV
+            with open(self.csv_path, "a") as f:
+                f.write(f"{int(state.epoch)},{peak}\n")
+
+memory_peak_callback = MemoryPeakPerEpochCallback()
 
 accuracy_metric = evaluate.load("accuracy")
 def compute_metrics(eval_pred):
@@ -60,7 +81,8 @@ lora_config = LoraConfig(
     lora_dropout=0.1,
     bias="none",
     task_type="SEQ_CLS",
-    target_modules=["q_lin", "v_lin","query","value"],
+    target_modules=["q_lin","k_lin","v_lin"],
+   
 )
 
 model = get_peft_model(base_model, lora_config)
@@ -81,7 +103,7 @@ args = TrainingArguments(
     fp16 = False,
     bf16 = False,
 )
-optimizer = CustomAdam(model.parameters(), lr=2e-4)
+optimizer = AdamW(model.parameters(), lr=2e-4)
 scheduler = LambdaLR(optimizer, lambda _: 1.0)
 
 
@@ -93,6 +115,7 @@ trainer = Trainer(
     tokenizer=tokenizer,
     compute_metrics=compute_metrics,
     optimizers=(optimizer, scheduler),
+    callbacks=[memory_peak_callback],   
     
 )
 
@@ -105,52 +128,46 @@ for _ in range(3):
     out = model(**batch)
     out.loss.backward()
     optimizer.step()
-
-torch.cuda.synchronize()
-
-
-optimizer.zero_grad()
-outputs = model(**batch)
-loss = outputs.loss
-loss.backward()
-
-
+    
 if device == "cuda":
-    torch.cuda.reset_peak_memory_stats()
-    
-
-    
-batch = next(iter(train_dataloader))
-batch = {k: v.to(device) for k, v in batch.items()}
-optimizer.zero_grad()
-outputs = model(**batch)
-loss = outputs.loss
-loss.backward()
-
-
-optimizer.step() 
-
-    
+    print("\n=== Profiling with CUDA ===")
+    torch.cuda.synchronize()
+    with profile(
+        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+        record_shapes=True,
+        with_stack=True,
+    ) as prof:
+        batch = next(iter(train_dataloader))
+        batch = {k: v.to(device) for k, v in batch.items()}
+        optimizer.zero_grad()
+        outputs = model(**batch)
+        loss = outputs.loss
+        loss.backward()
+        optimizer.step() 
+        
+else:
+    batch = next(iter(train_dataloader))
+    batch = {k: v.to(device) for k, v in batch.items()}
+    optimizer.zero_grad()
+    outputs = model(**batch)
+    loss = outputs.loss
+    loss.backward()
+    optimizer.step() 
 
 trainer.train()
+    
 trainer.evaluate()
 
 
+if device == "cuda":
+    print("\n=== TIME (CUDA) ===")
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 
-print("\n=== TIME (CUDA) ===")
-print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
+    with open("profile_cuda_time.txt", "w") as f:
+        f.write(prof.key_averages().table(sort_by="cuda_time_total", row_limit=200))
 
-print("\n=== GPU MEMORY ===")
-print(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=20))
-
-with open("profile_cuda_time.txt", "w") as f:
-    f.write(prof.key_averages().table(sort_by="cuda_time_total", row_limit=200))
-
-with open("profile_cuda_memory.txt", "w") as f:
-    f.write(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=200))
-
-# Optional: Chrome trace
-prof.export_chrome_trace("profile_trace.json")
+    # Optional: Chrome trace
+    prof.export_chrome_trace("profile_trace.json")
 
 
 model.save_pretrained("distilbert-sst2-lora")
