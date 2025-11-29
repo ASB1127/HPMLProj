@@ -24,37 +24,7 @@ from custom_adam.optimizer.custom_adam_optimizer import CustomAdam
 import torch
 
 
-class MemoryMonitorCallback(TrainerCallback):
-    def __init__(self):
-        self.epoch_stats = []
-        
-    def on_epoch_begin(self, args, state, control, **kwargs):
-        if torch.cuda.is_available():
-            torch.cuda.reset_peak_memory_stats()
-    
-    def on_epoch_end(self, args, state, control, **kwargs):
-        if torch.cuda.is_available():
-            peak = torch.cuda.max_memory_allocated()
-            current = torch.cuda.memory_allocated()
-            
-            self.epoch_stats.append({
-                "epoch": int(state.epoch),
-                "current_allocated": current,
-                "peak_allocated": peak,
-            })
-    
-    def save_csv(self, filename="epoch_memory.csv"):
-        """Write epoch_stats to a CSV file."""
-        with open(filename, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["epoch", "current_allocated_bytes", "peak_allocated_bytes"])
 
-            for stat in self.epoch_stats:
-                writer.writerow([
-                    stat["epoch"],
-                    stat["current_allocated"],
-                    stat["peak_allocated"]
-                ])
 
 
 accuracy_metric = evaluate.load("accuracy")
@@ -114,7 +84,7 @@ args = TrainingArguments(
 optimizer = CustomAdam(model.parameters(), lr=2e-4)
 scheduler = LambdaLR(optimizer, lambda _: 1.0)
 
-memory_cb = MemoryMonitorCallback()
+
 trainer = Trainer(
     model=model,
     args=args,
@@ -123,12 +93,12 @@ trainer = Trainer(
     tokenizer=tokenizer,
     compute_metrics=compute_metrics,
     optimizers=(optimizer, scheduler),
-    callbacks=[memory_cb]
+    
 )
 
 train_dataloader = trainer.get_train_dataloader()
 
-for _ in range(2):
+for _ in range(3):
     batch = next(iter(train_dataloader))
     batch = {k: v.to(device) for k, v in batch.items()}
     optimizer.zero_grad()
@@ -137,11 +107,6 @@ for _ in range(2):
     optimizer.step()
 
 torch.cuda.synchronize()
-
-
-batch = next(iter(train_dataloader))
-batch = {k: v.to(device) for k, v in batch.items()}
-
 
 
 optimizer.zero_grad()
@@ -153,14 +118,19 @@ with profile(
     record_shapes=True,
     profile_memory=True,
 ) as prof:
+    batch = next(iter(train_dataloader))
+    batch = {k: v.to(device) for k, v in batch.items()}
+    optimizer.zero_grad()
+    outputs = model(**batch)
+    loss = outputs.loss
+    loss.backward()
     optimizer.step()
+    if device == "cuda":
+        torch.cuda.synchronize()
 
 trainer.train()
 trainer.evaluate()
 
-
-memory_cb.save_csv("epoch_memory.csv")
-print("Saved epoch memory stats → epoch_memory.csv")
 
 
 print("\n=== TIME (CUDA) ===")
