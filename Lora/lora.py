@@ -3,6 +3,8 @@ from transformers import TrainerCallback
 import sys, os
 import numpy as np
 from torch.optim import AdamW
+from torch.autograd import profiler as autograd_profiler
+
 import evaluate
 import csv
 
@@ -20,14 +22,13 @@ from transformers import AutoModelForSequenceClassification
 from custom_adam.optimizer.custom_adam_optimizer import CustomAdam
 
 
-
 import torch
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
     def __init__(self, csv_path="epoch_peak_memory.csv"):
         self.csv_path = csv_path
 
-        # Write CSV header once
+        
         with open(self.csv_path, "w") as f:
             f.write("epoch,peak_memory_bytes\n")
 
@@ -39,20 +40,32 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
         if torch.cuda.is_available():
             peak = torch.cuda.max_memory_allocated()
 
-            # Print to console
+
             print(f"[Epoch {int(state.epoch)}] Peak CUDA Memory: {peak/1e6:.2f} MB")
 
-            # Write to CSV
+ 
             with open(self.csv_path, "a") as f:
                 f.write(f"{int(state.epoch)},{peak}\n")
 
 memory_peak_callback = MemoryPeakPerEpochCallback()
 
 accuracy_metric = evaluate.load("accuracy")
+
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
     preds = np.argmax(logits, axis=-1)
     return accuracy_metric.compute(predictions=preds, references=labels)
+
+def clear_flops(model):
+    """
+    Remove THOP-inserted buffers (total_ops, total_params) from all modules.
+    Avoids KeyError: attribute already exists.
+    """
+    for m in model.modules():
+        if hasattr(m, "total_ops"):
+            del m.total_ops
+        if hasattr(m, "total_params"):
+            del m.total_params
 
 device = (
     "mps" if torch.backends.mps.is_available()
@@ -107,6 +120,7 @@ optimizer = AdamW(model.parameters(), lr=2e-4)
 scheduler = LambdaLR(optimizer, lambda _: 1.0)
 
 
+    
 trainer = Trainer(
     model=model,
     args=args,
@@ -128,46 +142,51 @@ for _ in range(3):
     out = model(**batch)
     out.loss.backward()
     optimizer.step()
-    
+
 if device == "cuda":
-    print("\n=== Profiling with CUDA ===")
-    torch.cuda.synchronize()
-    with profile(
-        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-        record_shapes=True,
-        with_stack=True,
+    # 1. Grab a single real training batch
+    batch = next(iter(train_dataloader))
+    batch = {k: v.to(device) for k, v in batch.items()}
+
+    # 2. Profile ONE training step with FLOPs enabled (autograd profiler)
+    with autograd_profiler.profile(
+        with_flops=True,
+        use_cuda=True,
+        record_shapes=False,
+        profile_memory=False,
     ) as prof:
-        batch = next(iter(train_dataloader))
-        batch = {k: v.to(device) for k, v in batch.items()}
         optimizer.zero_grad()
         outputs = model(**batch)
         loss = outputs.loss
         loss.backward()
-        optimizer.step() 
-        
-else:
-    batch = next(iter(train_dataloader))
-    batch = {k: v.to(device) for k, v in batch.items()}
-    optimizer.zero_grad()
-    outputs = model(**batch)
-    loss = outputs.loss
-    loss.backward()
-    optimizer.step() 
+        optimizer.step()
+
+    # 3. Aggregate FLOPs from this step (ignore events without flops)
+    total_flops_step = sum(
+        e.flops for e in prof.key_averages() if e.flops is not None
+    )
+    print(f"[Profiler] FLOPs for one training step: {total_flops_step:,}")
+
+    # 4. Estimate FLOPs per epoch
+    num_batches = len(train_dataloader)
+    flops_per_epoch = total_flops_step * num_batches
+    print(f"[Profiler] FLOPs per epoch (approx): {flops_per_epoch:,}")
+
+    # 5. Save to file
+    with open("flops_profiler_stats.csv", "w") as f:
+        f.write("metric,value\n")
+        f.write(f"step_flops,{total_flops_step}\n")
+        f.write(f"epoch_flops,{flops_per_epoch}\n")
+
+    
+
 
 trainer.train()
     
 trainer.evaluate()
 
 
-if device == "cuda":
-    print("\n=== TIME (CUDA) ===")
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
 
-    with open("profile_cuda_time.txt", "w") as f:
-        f.write(prof.key_averages().table(sort_by="cuda_time_total", row_limit=200))
-
-    # Optional: Chrome trace
-    prof.export_chrome_trace("profile_trace.json")
 
 
 model.save_pretrained("distilbert-sst2-lora")
