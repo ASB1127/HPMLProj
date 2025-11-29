@@ -127,39 +127,11 @@ outputs = model(**batch)
 loss = outputs.loss
 loss.backward()
 
-# debug
-optimizer.step() 
-# debug
-    
-"""
-with profile(
-    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-    record_shapes=True,
-    profile_memory=True,
-) as prof, open("step_memory_log.csv","w") as f:
-    writer = csv.writer(f)
-    writer.writerow([
-        "step",
-        "current_memory_bytes",
-        "peak_memory_bytes",
-        "active_bytes_allocation",
-        "reserved_bytes_allocation"
-    ])
-    optimizer.step()
-    if device == "cuda":
-            torch.cuda.synchronize()
-            current_mem = torch.cuda.memory_allocated()
-            peak_mem = torch.cuda.max_memory_allocated()
-            mem_stats = torch.cuda.memory_stats()
 
-            writer.writerow([
-                i,
-                current_mem,
-                peak_mem,
-                mem_stats["active_bytes.all.allocated"],
-                mem_stats["reserved_bytes.all.allocated"]
-            ])
-"""
+optimizer.step() 
+
+    
+
 trainer.train()
 trainer.evaluate()
 
