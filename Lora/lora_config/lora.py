@@ -51,6 +51,42 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
             with open(self.csv_path, "a") as f:
                 f.write(f"{int(state.epoch)},{peak}\n")
 
+class LossPerEpochCallback(TrainerCallback):
+    def __init__(self, rank, base_path="./graph"):
+        self.rank = rank
+        self.base_path = base_path
+        self.path = f"{base_path}/r{rank}"
+        os.makedirs(self.path, exist_ok=True)
+
+        self.csv_path = f"{self.path}/epoch_loss.csv"
+        with open(self.csv_path, "w") as f:
+            f.write("epoch,train_loss,eval_loss\n")
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        # TRAIN loss is available inside `state.log_history`
+        train_loss = None
+        eval_loss  = None
+
+        # Parse log history backwards until we find the last loss entries
+        for log in reversed(state.log_history):
+            if train_loss is None and "loss" in log:
+                train_loss = log["loss"]
+            if eval_loss is None and "eval_loss" in log:
+                eval_loss = log["eval_loss"]
+            if train_loss is not None and eval_loss is not None:
+                break
+
+        # If still missing, fill with blank or 0
+        train_loss = train_loss if train_loss is not None else ""
+        eval_loss = eval_loss if eval_loss is not None else ""
+
+        # Append to CSV
+        with open(self.csv_path, "a") as f:
+            f.write(f"{int(state.epoch)},{train_loss},{eval_loss}\n")
+
+        print(f"[Epoch {int(state.epoch)}] train_loss={train_loss}, eval_loss={eval_loss}")
+
+
 class lora_run():
     
     def __init__(self, num_train_epochs, rank, learning_rate):
@@ -75,7 +111,9 @@ class lora_run():
             torch.cuda.reset_peak_memory_stats()
 
         memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank)
-
+        loss_callback = LossPerEpochCallback(rank=self.rank)
+        rank_dir = f"./graph/r{self.rank}"
+        os.makedirs(rank_dir, exist_ok=True)
 
         self.accuracy_metric = evaluate.load("accuracy")
 
@@ -141,7 +179,7 @@ class lora_run():
             tokenizer=self.tokenizer,
             compute_metrics=self.compute_metrics,
             optimizers=(optimizer, scheduler),
-            callbacks=[memory_peak_callback],   
+            callbacks=[memory_peak_callback, loss_callback],   
             
         )
 
@@ -185,7 +223,7 @@ class lora_run():
             print(f"[Profiler] FLOPs per epoch (approx): {flops_per_epoch:,}")
 
 
-            with open("./graph/flops_profiler_stats.csv", "w") as f:
+            with open(f"{rank_dir}/flops_profiler_stats.csv", "w") as f:
                 f.write("metric,value\n")
                 f.write(f"step_flops,{total_flops_step}\n")
                 f.write(f"epoch_flops,{flops_per_epoch}\n")
@@ -202,10 +240,10 @@ class lora_run():
         if torch.cuda.is_available():
             total_peak = torch.cuda.max_memory_reserved()
             print(f"[PROGRAM TOTAL PEAK GPU MEMORY]: {total_peak/1e6:.2f} MB")
-            with open("./graph/total_program_memory.csv", "w") as f:
+            with open(f"{rank_dir}/total_program_memory.csv", "w") as f:
                 f.write("metric,value_bytes\n")
                 f.write(f"program_total_peak_memory,{total_peak}\n")
-
+            
         model.save_pretrained("distilbert-sst2-lora")
 
         model = model.merge_and_unload()
