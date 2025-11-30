@@ -19,7 +19,7 @@ from transformers import AutoTokenizer
 from peft import LoraConfig, get_peft_model
 from transformers import TrainingArguments, Trainer
 from transformers import AutoModelForSequenceClassification
-from custom_adam.optimizer.custom_adam_optimizer import CustomAdam
+
 
 
 import torch
@@ -27,10 +27,14 @@ import torch
 
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
-    def __init__(self, csv_path="epoch_peak_memory.csv"):
-        self.csv_path = csv_path
+    def __init__(self, rank, base_path="./graph"):
+        self.rank = rank
+        self.base_path = base_path
+        self.path = f"{base_path}/r{rank}"
 
-        
+        os.makedirs(self.path, exist_ok=True)
+
+        self.csv_path = f"{self.path}/epoch_peak_memory.csv"
         with open(self.csv_path, "w") as f:
             f.write("epoch,peak_memory_bytes\n")
 
@@ -42,10 +46,8 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
         if torch.cuda.is_available():
             peak = torch.cuda.max_memory_allocated()
 
-
             print(f"[Epoch {int(state.epoch)}] Peak CUDA Memory: {peak/1e6:.2f} MB")
 
- 
             with open(self.csv_path, "a") as f:
                 f.write(f"{int(state.epoch)},{peak}\n")
 
@@ -72,7 +74,8 @@ class lora_run():
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
 
-        memory_peak_callback = MemoryPeakPerEpochCallback()
+        memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank)
+
 
         self.accuracy_metric = evaluate.load("accuracy")
 
@@ -99,7 +102,7 @@ class lora_run():
 
         lora_config = LoraConfig(
             r=self.rank,                          
-            lora_alpha=16,                
+            lora_alpha=self.rank*2,                
             lora_dropout=0.1,
             bias="none",
             task_type="SEQ_CLS",
@@ -117,7 +120,7 @@ class lora_run():
             per_device_eval_batch_size=64,
             num_train_epochs=self.num_train_epochs,
             learning_rate=self.learning_rate,
-            evaluation_strategy="epoch",
+            eval_strategy="epoch",
             save_strategy="epoch",
             load_best_model_at_end=True,
             logging_steps=50,
@@ -182,7 +185,7 @@ class lora_run():
             print(f"[Profiler] FLOPs per epoch (approx): {flops_per_epoch:,}")
 
 
-            with open("flops_profiler_stats.csv", "w") as f:
+            with open("./graph/flops_profiler_stats.csv", "w") as f:
                 f.write("metric,value\n")
                 f.write(f"step_flops,{total_flops_step}\n")
                 f.write(f"epoch_flops,{flops_per_epoch}\n")
@@ -199,7 +202,7 @@ class lora_run():
         if torch.cuda.is_available():
             total_peak = torch.cuda.max_memory_reserved()
             print(f"[PROGRAM TOTAL PEAK GPU MEMORY]: {total_peak/1e6:.2f} MB")
-            with open("total_program_memory.csv", "w") as f:
+            with open("./graph/total_program_memory.csv", "w") as f:
                 f.write("metric,value_bytes\n")
                 f.write(f"program_total_peak_memory,{total_peak}\n")
 
