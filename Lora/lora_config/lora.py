@@ -4,10 +4,13 @@ import sys, os
 import numpy as np
 from torch.optim import AdamW
 from torch.autograd import profiler as autograd_profiler
+from pathlib import Path
+from peft import PeftModel
 
 import evaluate
 import csv
-
+import shutil
+        
 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -140,7 +143,7 @@ class lora_run():
 
         lora_config = LoraConfig(
             r=self.rank,                          
-            lora_alpha=self.rank*2,                
+            lora_alpha=self.rank,                
             lora_dropout=0.1,
             bias="none",
             task_type="SEQ_CLS",
@@ -244,8 +247,34 @@ class lora_run():
                 f.write("metric,value_bytes\n")
                 f.write(f"program_total_peak_memory,{total_peak}\n")
             
-        model.save_pretrained("distilbert-sst2-lora")
+        adapter_dir = f"distilbert-sst2-lora-r{self.rank}"
+        model.save_pretrained(adapter_dir)
+        print(f"[Rank {self.rank}] Saved LoRA adapter to {adapter_dir}")
 
-        model = model.merge_and_unload()
-        model.save_pretrained("distilbert-sst2-full")
+        # 2. Load ORIGINAL DistilBERT base model (stored locally)
+        BASE = "/workspace/HPMLProj/Lora/distilbert-original"
+        base_model_full = AutoModelForSequenceClassification.from_pretrained(BASE)
+
+        # 3. Load the LoRA adapter we just saved
+        model_with_adapter = PeftModel.from_pretrained(base_model_full, adapter_dir)
+
+        # 4. Merge LoRA weights into a full model
+        merged = model_with_adapter.merge_and_unload()
+
+        # 5. Save merged full model to rank-specific folder
+        full_model_dir = f"distilbert-sst2-full-r{self.rank}"
+        merged.save_pretrained(full_model_dir)
+        print(f"[Rank {self.rank}] Saved merged full model to {full_model_dir}")
+
+        # 6. Copy tokenizer files into the merged-model directory
+        TOKENIZER_SRC_DIR = "/workspace/HPMLProj/Lora/distilbert-original"
+        os.makedirs(full_model_dir, exist_ok=True)
+
+        for fname in ["vocab.txt", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]:
+            src = Path(TOKENIZER_SRC_DIR) / fname
+            dst = Path(full_model_dir) / fname
+            if src.exists():
+                shutil.copy(src, dst)
+
+        print(f"[Rank {self.rank}] Tokenizer files copied into {full_model_dir}")
 
