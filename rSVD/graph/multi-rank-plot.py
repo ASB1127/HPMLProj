@@ -9,7 +9,7 @@ import glob
 # Update this list with the rank_fractions you've run
 # The script will look for directories like r0_1, r0_3, r0_5, etc.
 RANK_FRACTIONS = [0.01, 0.05, 0.1, 0.25, 0.5]  # Update based on your runs
-BASE = "."          # <--- FIXED (your folders are in current directory)
+BASE = "."          # <--- Script runs from graph/ directory, so BASE is "."
 
 os.makedirs("./plots", exist_ok=True)
 
@@ -17,6 +17,11 @@ os.makedirs("./plots", exist_ok=True)
 def rank_fraction_to_dir(rf):
     """Convert rank_fraction (float) to directory name (e.g., 0.3 -> r0_3)"""
     return f"r{rf}".replace(".", "_")
+
+# Verify we're in the right directory (should have r* subdirectories)
+if not glob.glob(os.path.join(BASE, "r*")):
+    print(f"⚠ Warning: No r* directories found in '{BASE}'. Make sure you're running this script from the graph/ directory.")
+    print(f"   Expected to find directories like: r0_01, r0_05, etc.")
 
 # Auto-detect available rank_fraction directories if RANK_FRACTIONS is empty
 if not RANK_FRACTIONS:
@@ -76,12 +81,20 @@ for rf in RANK_FRACTIONS:
         
         # Summaries for comparison plots
         memory_summary[rf] = data[rf]["epoch_mem"]["peak_memory_bytes"].max() / 1e9
-        flops_summary[rf] = data[rf]["flops"].loc[data[rf]["flops"]["metric"] == "step_flops", "value"].item()
-        program_mem_summary[rf] = (
-            data[rf]["total_mem"]
-            .loc[data[rf]["total_mem"]["metric"] == "program_total_peak_memory", "value_bytes"]
-            .item() / 1e9
-        )
+        
+        # Extract FLOPs (handle case where metric might not exist)
+        flops_row = data[rf]["flops"].loc[data[rf]["flops"]["metric"] == "step_flops"]
+        if not flops_row.empty:
+            flops_summary[rf] = flops_row["value"].item()
+        else:
+            print(f"⚠ Warning: step_flops not found for rank_fraction {rf}")
+            
+        # Extract total program memory
+        total_mem_row = data[rf]["total_mem"].loc[data[rf]["total_mem"]["metric"] == "program_total_peak_memory"]
+        if not total_mem_row.empty:
+            program_mem_summary[rf] = total_mem_row["value_bytes"].item() / 1e9
+        else:
+            print(f"⚠ Warning: program_total_peak_memory not found for rank_fraction {rf}")
         
         if "forward_mem" in data[rf]:
             forward_mem_summary[rf] = (
@@ -116,7 +129,12 @@ for rf in RANK_FRACTIONS:
         continue
     df = data[rf]["loss"]
     label = f"Rank Fraction {rf}"
-    plt.plot(df["epoch"], df["train_loss"], marker="o", label=f"{label} — Train Loss")
+    # Convert empty strings to NaN for numeric columns
+    df["train_loss"] = pd.to_numeric(df["train_loss"], errors="coerce")
+    df["eval_loss"] = pd.to_numeric(df["eval_loss"], errors="coerce")
+    
+    if df["train_loss"].notna().any():
+        plt.plot(df["epoch"], df["train_loss"], marker="o", label=f"{label} — Train Loss")
     if df["eval_loss"].notna().any():
         plt.plot(df["epoch"], df["eval_loss"], marker="o", linestyle="--", label=f"{label} — Eval Loss")
 
