@@ -8,7 +8,8 @@ from torch.autograd import profiler as autograd_profiler
 class profiler_forward():
     def __init__(self, rank):
         self.rank = rank
-        self.MODEL_DIR = f"/workspace/HPMLProj/Lora/distilbert-sst2-full-r{rank}"
+        self.MODEL_DIR = f"/workspace/HPMLProj/rSVD_Weight_Reduction/distilbert-sst2-rSVD-r{rank}"
+
         self.DEVICE = "cuda"
 
     def load_model(self):

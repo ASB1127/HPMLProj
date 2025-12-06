@@ -110,7 +110,7 @@ class rSVDLinear(nn.Module):
         
         q = min(rank + oversample, min(out_features, in_features))
 
-        U, S, Vh = torch.svd_lowrank(
+        U, S, V = torch.svd_lowrank(
             W,
             q=q,
             niter=2
@@ -118,11 +118,11 @@ class rSVDLinear(nn.Module):
         r = min(rank, S.size(0))
         U_r = U[:, :r]
         S_r = S[:r]
-        Vh_r = Vh[:r, :]
+        V_r = V[:, :r].T
 
         self.A = nn.Parameter(U_r.clone())
         self.C = nn.Parameter(S_r.clone())
-        self.B = nn.Parameter(Vh_r.clone())
+        self.B = nn.Parameter(V_r.clone())
         
         if linear.bias is not None:
             self.bias = nn.Parameter(linear.bias.data.clone())
