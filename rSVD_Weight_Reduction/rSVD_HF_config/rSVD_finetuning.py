@@ -40,8 +40,9 @@ def apply_rsvd_to_attention_qkv(model, rank):
 
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
-    def __init__(self, base_path="./graph"):
-        self.path = base_path
+    def __init__(self, rank, base_path="./graph"):
+        self.rank = rank
+        self.path = f"{base_path}/r{rank}"
         os.makedirs(self.path, exist_ok=True)
 
         # CSV file for peak memory
@@ -64,9 +65,9 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
                 f.write(f"{int(state.epoch)},{peak}\n")
 
 class LossPerEpochCallback(TrainerCallback):
-    def __init__(self):
-        output_dir="./rSVD_finetuning"
-        self.path = output_dir
+    def __init__(self,rank, base_path="./graph"):
+        self.rank = rank
+        self.path = f"{base_path}/r{rank}"
         os.makedirs(self.path, exist_ok=True)
 
         # Create CSV file
@@ -162,8 +163,8 @@ class rSVD_run():
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
 
-        memory_peak_callback = MemoryPeakPerEpochCallback(base_path="./rSVD_finetuning")
-        loss_callback = LossPerEpochCallback()
+        memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank,base_path="./rSVD_finetuning")
+        loss_callback = LossPerEpochCallback(rank=self.rank,base_path="./rSVD_finetuning")
         output_dir = "./rSVD_finetuning"
         os.makedirs(output_dir, exist_ok=True)
 
