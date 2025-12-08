@@ -16,7 +16,9 @@ sys.path.insert(0, PROJECT_ROOT)
 
 def _get_rank_dir(rank_fraction, base_path="./graph"):
     """Helper function to create consistent directory name from rank_fraction."""
-    return f"{base_path}/r{rank_fraction}".replace(".", "_")
+    # Convert rank_fraction to string and replace dots only in the number part
+    rank_str = str(rank_fraction).replace(".", "_")
+    return f"{base_path}/r{rank_str}"
 
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
