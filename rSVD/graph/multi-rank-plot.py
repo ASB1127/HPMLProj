@@ -45,6 +45,7 @@ if not RANK_FRACTIONS:
 # Storage for comparison plots
 memory_summary = {}
 flops_summary = {}
+epoch_flops_summary = {}
 program_mem_summary = {}
 forward_mem_summary = {}
 forward_flops_summary = {}
@@ -88,6 +89,13 @@ for rf in RANK_FRACTIONS:
             flops_summary[rf] = flops_row["value"].item()
         else:
             print(f"⚠ Warning: step_flops not found for rank_fraction {rf}")
+        
+        # Extract epoch FLOPs
+        epoch_flops_row = data[rf]["flops"].loc[data[rf]["flops"]["metric"] == "epoch_flops"]
+        if not epoch_flops_row.empty:
+            epoch_flops_summary[rf] = epoch_flops_row["value"].item()
+        else:
+            print(f"⚠ Warning: epoch_flops not found for rank_fraction {rf}")
             
         # Extract total program memory
         total_mem_row = data[rf]["total_mem"].loc[data[rf]["total_mem"]["metric"] == "program_total_peak_memory"]
@@ -169,32 +177,54 @@ plt.close()
 print("✓ Saved peak_memory_per_epoch_across_rank_fractions.png")
 
 # =========================================
-# PLOT 3 — FLOPs vs Rank Fraction
+# PLOT 3 — FLOPs per Step vs Rank Fraction (Bar Graph)
 # =========================================
 if flops_summary:
     plt.figure(figsize=(8,5))
     rfs = sorted(flops_summary.keys())
-    plt.plot(rfs, [flops_summary[rf] / 1e12 for rf in rfs], marker="o", linewidth=2, markersize=8)
+    values = [flops_summary[rf] / 1e12 for rf in rfs]
+    labels = [f"{rf}" for rf in rfs]
+    plt.bar(labels, values, color=plt.cm.viridis(range(len(rfs))))
     plt.xlabel("Rank Fraction")
     plt.ylabel("FLOPs per Step (TFLOPs)")
-    plt.title("Compute Cost vs rSVD Rank Fraction")
-    plt.grid(True, linestyle="--", alpha=0.5)
+    plt.title("Compute Cost per Step vs rSVD Rank Fraction")
+    plt.grid(axis="y", linestyle="--", alpha=0.5)
     plt.tight_layout()
     plt.savefig("./plots/flops_vs_rank_fraction.png", dpi=300)
     plt.close()
     print("✓ Saved flops_vs_rank_fraction.png")
 
 # =========================================
-# PLOT 4 — Peak GPU Memory vs Rank Fraction
+# PLOT 3b — Epoch FLOPs vs Rank Fraction (Bar Graph)
+# =========================================
+if epoch_flops_summary:
+    plt.figure(figsize=(8,5))
+    rfs = sorted(epoch_flops_summary.keys())
+    values = [epoch_flops_summary[rf] / 1e15 for rf in rfs]
+    labels = [f"{rf}" for rf in rfs]
+    plt.bar(labels, values, color=plt.cm.plasma(range(len(rfs))))
+    plt.xlabel("Rank Fraction")
+    plt.ylabel("FLOPs per Epoch (PFLOPs)")
+    plt.title("Compute Cost per Epoch vs rSVD Rank Fraction")
+    plt.grid(axis="y", linestyle="--", alpha=0.5)
+    plt.tight_layout()
+    plt.savefig("./plots/epoch_flops_vs_rank_fraction.png", dpi=300)
+    plt.close()
+    print("✓ Saved epoch_flops_vs_rank_fraction.png")
+
+# =========================================
+# PLOT 4 — Peak GPU Memory vs Rank Fraction (Bar Graph)
 # =========================================
 if memory_summary:
     plt.figure(figsize=(8,5))
     rfs = sorted(memory_summary.keys())
-    plt.plot(rfs, [memory_summary[rf] for rf in rfs], marker="o", linewidth=2, markersize=8)
+    values = [memory_summary[rf] for rf in rfs]
+    labels = [f"{rf}" for rf in rfs]
+    plt.bar(labels, values, color=plt.cm.coolwarm(range(len(rfs))))
     plt.xlabel("Rank Fraction")
     plt.ylabel("Peak Memory (GB)")
     plt.title("Peak GPU Memory vs rSVD Rank Fraction")
-    plt.grid(True, linestyle="--", alpha=0.5)
+    plt.grid(axis="y", linestyle="--", alpha=0.5)
     plt.tight_layout()
     plt.savefig("./plots/peak_memory_vs_rank_fraction.png", dpi=300)
     plt.close()
