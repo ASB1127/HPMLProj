@@ -3,6 +3,7 @@ import os
 import numpy as np
 import torch
 from torch.autograd import profiler as autograd_profiler
+from torch.utils.data import DataLoader, Subset
 from transformers import TrainerCallback, AutoTokenizer, AutoModelForSequenceClassification
 from transformers import TrainingArguments, Trainer
 from torch.optim.lr_scheduler import LambdaLR
@@ -14,19 +15,35 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
 
-def _get_rank_dir(rank_fraction, base_path="./graph"):
-    """Helper function to create consistent directory name from rank_fraction."""
-    # Convert rank_fraction to string and replace dots only in the number part
-    rank_str = str(rank_fraction).replace(".", "_")
-    return f"{base_path}/r{rank_str}"
+def _get_rank_dir(rank, base_path="./graph"):
+    """Helper function to create consistent directory name from rank."""
+    return f"{base_path}/r{rank}"
+
+
+def _rank_to_rank_fraction(rank, typical_dim=768):
+    """
+    Convert rank (integer) to rank_fraction for optimizer.
+    
+    For DistilBERT, typical attention dimensions are ~768, so we estimate
+    rank_fraction = rank / typical_dim. The optimizer will then calculate
+    the actual rank as min(rank_fraction * min(m,n), rank) per parameter.
+    
+    Args:
+        rank: Target rank (integer)
+        typical_dim: Typical dimension for the model (default 768 for DistilBERT)
+    
+    Returns:
+        rank_fraction: Fraction to pass to optimizer
+    """
+    return rank / typical_dim
 
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
-    def __init__(self, rank_fraction, base_path="./graph"):
-        self.rank_fraction = rank_fraction
+    def __init__(self, rank, base_path="./graph"):
+        self.rank = rank
         self.base_path = base_path
-        # Create directory name based on rank_fraction
-        self.path = _get_rank_dir(rank_fraction, base_path)
+        # Create directory name based on rank
+        self.path = _get_rank_dir(rank, base_path)
         os.makedirs(self.path, exist_ok=True)
         self.csv_path = f"{self.path}/epoch_peak_memory.csv"
         with open(self.csv_path, "w") as f:
@@ -45,10 +62,10 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
 
 
 class LossPerEpochCallback(TrainerCallback):
-    def __init__(self, rank_fraction, base_path="./graph"):
-        self.rank_fraction = rank_fraction
+    def __init__(self, rank, base_path="./graph"):
+        self.rank = rank
         self.base_path = base_path
-        self.path = _get_rank_dir(rank_fraction, base_path)
+        self.path = _get_rank_dir(rank, base_path)
         os.makedirs(self.path, exist_ok=True)
         self.csv_path = f"{self.path}/epoch_loss.csv"
         with open(self.csv_path, "w") as f:
@@ -71,11 +88,106 @@ class LossPerEpochCallback(TrainerCallback):
         print(f"[Epoch {int(state.epoch)}] train_loss={train_loss}, eval_loss={eval_loss}")
 
 
+class AccuracyOnTrainSubsetCallback(TrainerCallback):
+    """
+    Callback to track accuracy on a random subset of training data.
+    
+    This samples a fixed subset of the training data (with a fixed seed) and
+    evaluates the model on this subset at the end of each epoch.
+    """
+    def __init__(self, rank, train_dataset, subset_size=1000, random_seed=42, 
+                 base_path="./graph", device=None):
+        """
+        Args:
+            rank: Rank identifier for directory naming
+            train_dataset: The training dataset to sample from
+            subset_size: Number of samples to include in the subset
+            random_seed: Random seed for reproducible sampling
+            base_path: Base path for saving results
+            device: Device to use for evaluation (if None, will auto-detect)
+        """
+        self.rank = rank
+        self.base_path = base_path
+        self.path = _get_rank_dir(rank, base_path)
+        os.makedirs(self.path, exist_ok=True)
+        self.csv_path = f"{self.path}/epoch_train_accuracy.csv"
+        
+        # Sample subset with fixed seed
+        np.random.seed(random_seed)
+        torch.manual_seed(random_seed)
+        
+        dataset_size = len(train_dataset)
+        subset_size = min(subset_size, dataset_size)
+        
+        # Randomly sample indices
+        indices = np.random.choice(dataset_size, size=subset_size, replace=False)
+        self.subset_indices = sorted(indices.tolist())  # Sort for reproducibility
+        
+        # Create subset dataset
+        self.subset_dataset = Subset(train_dataset, self.subset_indices)
+        
+        # Set up device
+        if device is None:
+            self.device = get_device()
+        else:
+            self.device = device
+        
+        # Initialize CSV file
+        with open(self.csv_path, "w") as f:
+            f.write("epoch,train_accuracy\n")
+        
+        print(f"[Rank {rank}] Created training subset with {subset_size} samples (seed={random_seed})")
+    
+    def on_epoch_end(self, args, state, control, **kwargs):
+        """Evaluate model on training subset at end of each epoch."""
+        model = kwargs.get('model')
+        if model is None:
+            return
+        
+        model.eval()
+        correct = 0
+        total = 0
+        
+        # Create DataLoader for subset
+        dataloader = DataLoader(
+            self.subset_dataset,
+            batch_size=args.per_device_eval_batch_size,
+            shuffle=False
+        )
+        
+        with torch.no_grad():
+            for batch in dataloader:
+                # Move batch to device
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+                
+                # Forward pass
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+                logits = outputs.logits
+                
+                # Compute accuracy
+                preds = torch.argmax(logits, dim=-1)
+                correct += (preds == labels).sum().item()
+                total += labels.size(0)
+        
+        accuracy = correct / total if total > 0 else 0.0
+        
+        # Save to CSV
+        with open(self.csv_path, "a") as f:
+            f.write(f"{int(state.epoch)},{accuracy}\n")
+        
+        print(f"[Rank {self.rank}] Epoch {int(state.epoch)} - Train Subset Accuracy: {accuracy*100:.2f}%")
+        
+        model.train()  # Set back to training mode
+
+
 class RsvdTrainer(Trainer):
     """Custom Trainer that uses rSVDAdam."""
     
-    def __init__(self, rank_fraction, proj_interval, use_rgp, *args, **kwargs):
-        self.rank_fraction = rank_fraction
+    def __init__(self, rank, proj_interval, use_rgp, typical_dim=768, *args, **kwargs):
+        self.rank = rank
+        self.rank_fraction = _rank_to_rank_fraction(rank, typical_dim)
         self.proj_interval = proj_interval
         self.use_rgp = use_rgp
         super().__init__(*args, **kwargs)
@@ -98,17 +210,21 @@ class RsvdTrainer(Trainer):
 
 class rsvd_run():
     
-    def __init__(self, num_train_epochs, rank_fraction, learning_rate, dataset="sst", 
+    def __init__(self, num_train_epochs, rank, learning_rate, dataset="sst", 
                  proj_interval=500, use_rgp=True, gradient_accumulation_steps=4,
-                 base_path="./graph"):
+                 base_path="./graph", typical_dim=768, train_subset_size=1000, 
+                 train_subset_seed=42):
         self.num_train_epochs = num_train_epochs
-        self.rank_fraction = rank_fraction
+        self.rank = rank
+        self.rank_fraction = _rank_to_rank_fraction(rank, typical_dim)
         self.learning_rate = learning_rate
         self.dataset = dataset.lower()
         self.proj_interval = proj_interval
         self.use_rgp = use_rgp
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.base_path = base_path
+        self.train_subset_size = train_subset_size
+        self.train_subset_seed = train_subset_seed
         self.device = None
         self.tokenizer = None
         self.model = None
@@ -122,7 +238,7 @@ class rsvd_run():
                 'train_split': 'train',
                 'eval_split': 'test',
                 'remove_columns': ['text'],
-                'save_dir': f'./bert_imdb_checkpoints_r{rank_fraction}'.replace(".", "_"),
+                'save_dir': f'./bert_imdb_checkpoints_r{rank}',
                 'model_name': 'distilbert-base-uncased',
                 'max_length': 128,
                 'batch_size': 32,
@@ -137,7 +253,7 @@ class rsvd_run():
                 'train_split': 'train',
                 'eval_split': 'validation',
                 'remove_columns': ['sentence', 'idx'],
-                'save_dir': f'./bert_sst2_checkpoints_r{rank_fraction}'.replace(".", "_"),
+                'save_dir': f'./bert_sst2_checkpoints_r{rank}',
                 'model_name': 'distilbert-base-uncased',
                 'max_length': 128,
                 'batch_size': 32,
@@ -164,16 +280,6 @@ class rsvd_run():
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
 
-        memory_peak_callback = MemoryPeakPerEpochCallback(
-            rank_fraction=self.rank_fraction,
-            base_path=self.base_path
-        )
-        loss_callback = LossPerEpochCallback(
-            rank_fraction=self.rank_fraction,
-            base_path=self.base_path
-        )
-        rank_dir = _get_rank_dir(self.rank_fraction, self.base_path)
-
         self.device = get_device()
         
         # Load dataset
@@ -192,6 +298,27 @@ class rsvd_run():
         tokenized_ds = dataset.map(self.tokenize_fn, batched=True)
         tokenized_ds = tokenized_ds.rename_column("label", "labels")
         tokenized_ds.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
+
+        memory_peak_callback = MemoryPeakPerEpochCallback(
+            rank=self.rank,
+            base_path=self.base_path
+        )
+        loss_callback = LossPerEpochCallback(
+            rank=self.rank,
+            base_path=self.base_path
+        )
+        
+        # Create accuracy callback for training subset (after dataset is loaded)
+        train_subset_callback = AccuracyOnTrainSubsetCallback(
+            rank=self.rank,
+            train_dataset=tokenized_ds[self.dataset_config['train_split']],
+            subset_size=self.train_subset_size,
+            random_seed=self.train_subset_seed,
+            base_path=self.base_path,
+            device=self.device
+        )
+        
+        rank_dir = _get_rank_dir(self.rank, self.base_path)
 
         # Load model
         print(f"\nLoading {model_name}...")
@@ -227,7 +354,7 @@ class rsvd_run():
         )
 
         trainer = RsvdTrainer(
-            rank_fraction=self.rank_fraction,
+            rank=self.rank,
             proj_interval=self.proj_interval,
             use_rgp=self.use_rgp,
             model=self.model,
@@ -236,7 +363,7 @@ class rsvd_run():
             eval_dataset=tokenized_ds[self.dataset_config['eval_split']],
             tokenizer=self.tokenizer,
             compute_metrics=self.compute_metrics,
-            callbacks=[memory_peak_callback, loss_callback],
+            callbacks=[memory_peak_callback, loss_callback, train_subset_callback],
         )
 
         train_dataloader = trainer.get_train_dataloader()
@@ -305,5 +432,5 @@ class rsvd_run():
                 f.write("metric,value_bytes\n")
                 f.write(f"program_total_peak_memory,{total_peak}\n")
         
-        print(f"[Rank Fraction {self.rank_fraction}] Saved model to {self.dataset_config['save_dir']}")
+        print(f"[Rank {self.rank}] Saved model to {self.dataset_config['save_dir']}")
 

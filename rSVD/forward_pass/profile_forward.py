@@ -4,35 +4,33 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from torch.autograd import profiler as autograd_profiler
 
 
-def _get_rank_dir(rank_fraction, base_path="./graph"):
-    """Helper function to create consistent directory name from rank_fraction."""
-    # Convert rank_fraction to string and replace dots only in the number part
-    rank_str = str(rank_fraction).replace(".", "_")
-    return f"{base_path}/r{rank_str}"
+def _get_rank_dir(rank, base_path="./graph"):
+    """Helper function to create consistent directory name from rank."""
+    return f"{base_path}/r{rank}"
 
 
 class profiler_forward():
-    def __init__(self, rank_fraction, dataset="sst", base_path="./graph"):
-        self.rank_fraction = rank_fraction
+    def __init__(self, rank, dataset="sst", base_path="./graph"):
+        self.rank = rank
         self.dataset = dataset.lower()
         self.base_path = base_path
         
-        # Determine model directory based on dataset and rank_fraction
+        # Determine model directory based on dataset and rank
         if self.dataset == 'imdb':
-            self.MODEL_DIR = f"./bert_imdb_checkpoints_r{rank_fraction}".replace(".", "_")
+            self.MODEL_DIR = f"./bert_imdb_checkpoints_r{rank}"
         else:  # sst
-            self.MODEL_DIR = f"./bert_sst2_checkpoints_r{rank_fraction}".replace(".", "_")
+            self.MODEL_DIR = f"./bert_sst2_checkpoints_r{rank}"
         
         self.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
     def load_model(self):
-        print(f"[Rank Fraction {self.rank_fraction}] Loading tokenizer...")
+        print(f"[Rank {self.rank}] Loading tokenizer...")
         tokenizer = AutoTokenizer.from_pretrained(
             self.MODEL_DIR,
             local_files_only=True
         )
 
-        print(f"[Rank Fraction {self.rank_fraction}] Loading model...")
+        print(f"[Rank {self.rank}] Loading model...")
         model = AutoModelForSequenceClassification.from_pretrained(
             self.MODEL_DIR,
             local_files_only=True
@@ -49,7 +47,7 @@ class profiler_forward():
             text = "This movie was absolutely fantastic! Highly recommended."
         
         inputs = tokenizer(text, return_tensors="pt").to(self.DEVICE)
-        rank_dir = _get_rank_dir(self.rank_fraction, self.base_path)
+        rank_dir = _get_rank_dir(self.rank, self.base_path)
         SAVE_DIR = f"{rank_dir}/forward_pass"
         os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -66,7 +64,7 @@ class profiler_forward():
                 f.write("metric,value_bytes\n")
                 f.write(f"peak_memory,{peak_memory}\n")
 
-            print(f"[Rank Fraction {self.rank_fraction}] Peak Forward Memory: {peak_memory/1e6:.2f} MB")
+            print(f"[Rank {self.rank}] Peak Forward Memory: {peak_memory/1e6:.2f} MB")
 
             # ----------------------------------------------------
             # 2. PROFILE FLOPs FOR A SINGLE FORWARD PASS
@@ -88,7 +86,7 @@ class profiler_forward():
                 f.write("metric,value\n")
                 f.write(f"forward_flops,{total_flops}\n")
         else:
-            print(f"[Rank Fraction {self.rank_fraction}] Forward pass profiling skipped (CPU device)")
+            print(f"[Rank {self.rank}] Forward pass profiling skipped (CPU device)")
             
     def runner(self):
         tokenizer, model = self.load_model()

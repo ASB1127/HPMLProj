@@ -1,0 +1,2 @@
+optimizer,rank,memory_mb,memory_bytes,savings_mb,savings_pct
+rSVDAdam,8,5.365074157714844,5625688,505.46150970458984,98.9497269078774
