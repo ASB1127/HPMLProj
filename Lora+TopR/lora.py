@@ -202,44 +202,37 @@ class lora_run():
         train_dataloader = trainer.get_train_dataloader()
 
         train_iter = iter(train_dataloader)
-        if device == "cuda":
-            if not hasattr(optimizer, "masked_step"):
-                raise RuntimeError("Top-r masking optimizer not attached. This config requires masking.")
-            optimizer.step = optimizer.masked_step
-            train_iter = iter(train_dataloader)
-            for _ in range(3):
-                batch = next(train_iter)
-                batch = {k: v.to(device) for k, v in batch.items()}
-                optimizer.zero_grad()
-                out = model(**batch)
-                out.loss.backward()
-                optimizer.step()
-                
+        for _ in range(3):
             batch = next(iter(train_dataloader))
             batch = {k: v.to(device) for k, v in batch.items()}
             optimizer.zero_grad()
-            
+            out = model(**batch)
+            out.loss.backward()
+            optimizer.step()
+
+        if device == "cuda":
+            if not hasattr(optimizer, "masked_step"):
+                raise RuntimeError("Top-r masking optimizer not attached. This config requires masking.")
+            batch = next(iter(train_dataloader))
+            batch = {k: v.to(device) for k, v in batch.items()}
+            optimizer.step = optimizer.masked_step
+            optimizer.zero_grad()
             with autograd_profiler.profile(with_flops=True, use_cuda=True) as prof:
                 out = model(**batch)
                 loss = out.loss
                 loss.backward()
                 optimizer.step()
-                
             masked_flops = sum(e.flops for e in prof.key_averages() if e.flops)
             num_batches = len(train_dataloader)
             masked_epoch_flops = masked_flops * num_batches
-            
             print(f"[Profiler] Masked FLOPs per step: {masked_flops:,}")
             print(f"[Profiler] Masked FLOPs per epoch: {masked_epoch_flops:,}")
             keep_fraction = self.compute_keep_fraction(model)
             print(f"[Profiler] Top-r keep fraction: {keep_fraction:.4f}")
-            
             effective_flops = masked_flops * keep_fraction
             effective_epoch_flops = effective_flops * num_batches
-            
             print(f"[Profiler] Effective FLOPs per step: {effective_flops:,.0f}")
             print(f"[Profiler] Effective FLOPs per epoch: {effective_epoch_flops:,.0f}")
-            
             with open(f"{rank_dir}/flops_profiler_stats.csv", "w") as f:
                 f.write("metric,value\n")
                 f.write(f"masked_step_flops,{masked_flops}\n")
@@ -281,3 +274,4 @@ class lora_run():
             if src.exists():
                 shutil.copy(src, dst)
         print(f"[Rank {self.rank}] Tokenizer files copied into {full_model_dir}")
+
