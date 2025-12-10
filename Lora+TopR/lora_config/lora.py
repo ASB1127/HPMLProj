@@ -7,6 +7,7 @@ from torch.autograd import profiler as autograd_profiler
 from pathlib import Path, PurePath
 from peft import PeftModel
 from torch.autograd import profiler as autograd_profiler
+from custom_optim.topr_adamw import TopRAdamW
 
 import evaluate
 import csv
@@ -182,7 +183,7 @@ class lora_run():
             fp16 = False,
             bf16 = False,
         )
-        optimizer = AdamW(model.parameters(), lr=self.learning_rate)
+        optimizer = TopRAdamW(model.parameters(), lr=self.learning_rate, top_r = 0.1)
         scheduler = LambdaLR(optimizer, lambda _: 1.0)
 
 
@@ -200,12 +201,7 @@ class lora_run():
         )
 
         train_dataloader = trainer.get_train_dataloader()
-
-        train_iter = iter(train_dataloader)
         if device == "cuda":
-            if not hasattr(optimizer, "masked_step"):
-                raise RuntimeError("Top-r masking optimizer not attached. This config requires masking.")
-            optimizer.step = optimizer.masked_step
             train_iter = iter(train_dataloader)
             for _ in range(3):
                 batch = next(train_iter)
