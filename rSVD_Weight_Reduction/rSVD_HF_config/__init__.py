@@ -1,2 +1,1 @@
-from .model_card import ModelCard
-
+from .modelcard.model_card import ModelCard

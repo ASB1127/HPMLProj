@@ -25,7 +25,7 @@ from transformers import AutoTokenizer
 
 from transformers import TrainingArguments, Trainer
 from transformers import AutoModelForSequenceClassification
-from modelcard import ModelCard
+from .modelcard.model_card import ModelCard
 
 
 import torch
