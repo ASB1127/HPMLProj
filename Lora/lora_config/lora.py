@@ -190,7 +190,7 @@ class lora_run():
 
         train_iter = iter(train_dataloader)
         for _ in range(3):
-            batch = next(iter(train_dataloader))
+            batch =next(train_iter)
             batch = {k: v.to(device) for k, v in batch.items()}
             optimizer.zero_grad()
             out = model(**batch)
@@ -199,7 +199,7 @@ class lora_run():
 
         if device == "cuda":
 
-            batch = next(iter(train_dataloader))
+            batch = next(train_iter)
             batch = {k: v.to(device) for k, v in batch.items()}
 
             with autograd_profiler.profile(
@@ -252,7 +252,7 @@ class lora_run():
         print(f"[Rank {self.rank}] Saved LoRA adapter to {adapter_dir}")
 
         # 2. Load ORIGINAL DistilBERT base model (stored locally)
-        BASE = "/workspace/HPMLProj/Lora/distilbert-original"
+        BASE = "distilbert-base-uncased"
         base_model_full = AutoModelForSequenceClassification.from_pretrained(BASE)
 
         # 3. Load the LoRA adapter we just saved
@@ -265,16 +265,7 @@ class lora_run():
         full_model_dir = f"distilbert-sst2-full-r{self.rank}"
         merged.save_pretrained(full_model_dir)
         print(f"[Rank {self.rank}] Saved merged full model to {full_model_dir}")
-
+        self.tokenizer.save_pretrained(full_model_dir)
         # 6. Copy tokenizer files into the merged-model directory
-        TOKENIZER_SRC_DIR = "/workspace/HPMLProj/Lora/distilbert-original"
-        os.makedirs(full_model_dir, exist_ok=True)
-
-        for fname in ["vocab.txt", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]:
-            src = Path(TOKENIZER_SRC_DIR) / fname
-            dst = Path(full_model_dir) / fname
-            if src.exists():
-                shutil.copy(src, dst)
-
         print(f"[Rank {self.rank}] Tokenizer files copied into {full_model_dir}")
 
