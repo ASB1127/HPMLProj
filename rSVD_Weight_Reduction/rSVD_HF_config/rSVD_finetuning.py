@@ -207,7 +207,7 @@ class rSVD_run():
 
         train_iter = iter(train_dataloader)
         for _ in range(3):
-            batch = next(iter(train_dataloader))
+            batch = next(train_iter)
             batch = {k: v.to(device) for k, v in batch.items()}
             optimizer.zero_grad()
             out = model(**batch)
@@ -215,8 +215,7 @@ class rSVD_run():
             optimizer.step()
 
         if device == "cuda":
-
-            batch = next(iter(train_dataloader))
+            batch = next(train_iter)
             batch = {k: v.to(device) for k, v in batch.items()}
 
             with autograd_profiler.profile(
