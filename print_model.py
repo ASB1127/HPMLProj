@@ -1,8 +1,14 @@
 import torch
 from transformers import AutoTokenizer
-from rSVD_modeling_distilbert import DistilBertForSequenceClassification_rSVD
+from rSVD_Weight_Reduction.rSVD_HF_config.rSVD_modeling_distilbert import (
+    DistilBertForSequenceClassification_rSVD
+)
+
 import sys
 from pathlib import Path
+import sys, os
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, PROJECT_ROOT)
 
 def print_model(model_dir):
     model_dir = Path(model_dir)
