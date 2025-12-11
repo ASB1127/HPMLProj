@@ -1,5 +1,6 @@
 import torch
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoTokenizer
+from rSVD_modeling_distilbert import DistilBertForSequenceClassification_rSVD
 import sys
 from pathlib import Path
 
@@ -9,7 +10,8 @@ def print_model(model_dir):
     print(f"\n=== Loading model from {model_dir} ===")
 
     # Load model + tokenizer
-    model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+    model = DistilBertForSequenceClassification_rSVD.from_pretrained(model_dir)
+
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
 
     print("\n=== MODEL ARCHITECTURE ===")

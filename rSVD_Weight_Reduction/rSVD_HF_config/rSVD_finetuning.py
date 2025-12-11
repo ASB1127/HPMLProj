@@ -8,6 +8,7 @@ from pathlib import Path
 from huggingface_hub import HfApi
 from huggingface_hub import HfFolder
 from peft import PeftModel
+from transformers import DistilBertForSequenceClassification
 
 import evaluate
 import csv
@@ -140,6 +141,18 @@ class rSVDLinear(nn.Module):
         W_approx = (self.A * self.C) @ self.B
         return F.linear(x, W_approx, self.bias)
 
+class DistilBertForSequenceClassification_rSVD(DistilBertForSequenceClassification):
+    def __init__(self, config):
+        super().__init__(config)
+
+        # Extra config flags (saved with the model)
+        self.is_rsvd_model = getattr(config, "is_rsvd_model", False)
+        self.rsvd_rank = getattr(config, "rsvd_rank", None)
+
+        # If this is an rSVD model, patch the attention layers
+        if self.is_rsvd_model and self.rsvd_rank is not None:
+            apply_rsvd_to_attention_qkv(self, self.rsvd_rank)
+
 
 class rSVD_run():
     
@@ -193,8 +206,16 @@ class rSVD_run():
 
 
 
+        base_model = DistilBertForSequenceClassification_rSVD.from_pretrained(
+        model_name,
+        num_labels=2,
+        )
 
-        base_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
+        base_model.config.is_rsvd_model = True
+        base_model.config.rsvd_rank = self.rank
+        base_model.config.architectures = ["DistilBertForSequenceClassification_rSVD"]
+
+
         model = base_model
         model = model.to(device)
         for p in model.parameters():
@@ -299,6 +320,12 @@ class rSVD_run():
                 f.write(f"program_total_peak_memory,{total_peak}\n")
 
         full_model_dir = f"distilbert-sst2-rSVD-r{self.rank}"
+
+        model.config.is_rsvd_model = True
+        model.config.rsvd_rank = self.rank
+        model.config.architectures = ["DistilBertForSequenceClassification_rSVD"]
+
+
         model.save_pretrained(full_model_dir)
         self.tokenizer.save_pretrained(full_model_dir)
         print(f"[Rank {self.rank}] Saved full dense model to {full_model_dir}")
