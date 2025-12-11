@@ -1,3 +1,4 @@
+from pathlib import Path
 class ModelCard:
     def write_model_card(
         self,
