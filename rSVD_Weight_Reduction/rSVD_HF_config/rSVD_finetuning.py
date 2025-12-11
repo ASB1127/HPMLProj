@@ -126,7 +126,7 @@ class rSVD_run():
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
 
-        memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank,base_path="./rSVD_finetuning")
+        memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank,base_path="./rSVD_finetuning_results")
         loss_callback = LossPerEpochCallback(rank=self.rank,base_path="./rSVD_finetuning")
         output_dir = "./rSVD_finetuning"
         os.makedirs(output_dir, exist_ok=True)
