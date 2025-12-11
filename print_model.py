@@ -24,7 +24,16 @@ def print_model(model_dir):
     print(model)
 
     # Count parameters
+    
     total_params = sum(p.numel() for p in model.parameters())
+
+    effective_trainable_params = 0
+    for name, p in model.named_parameters():
+        if any(k in name for k in ["A", "B", "C", "classifier"]):
+            effective_trainable_params += p.numel()
+
+    print(f"\nTotal parameters: {total_params:,}")
+    print(f"Effective trainable parameters (A/B/C + classifier): {effective_trainable_params:,}")
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     print(f"\nTotal parameters: {total_params:,}")
