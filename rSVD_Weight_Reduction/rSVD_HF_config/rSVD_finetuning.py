@@ -334,7 +334,7 @@ class rSVD_run():
         else:
             print("Logged into HuggingFace Hub. Proceeding with upload...")
 
-            repo_id = f"AmitBal/distilbert-sst2-rSVD-r{self.rank}"
+            repo_id = f"ab2720/distilbert-sst2-rSVD-r{self.rank}"
 
             api = HfApi()
 
