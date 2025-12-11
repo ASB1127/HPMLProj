@@ -5,6 +5,8 @@ import numpy as np
 from torch.optim import AdamW
 from torch.autograd import profiler as autograd_profiler
 from pathlib import Path
+from huggingface_hub import HfApi
+from huggingface_hub import HfFolder
 from peft import PeftModel
 
 import evaluate
@@ -23,7 +25,7 @@ from transformers import AutoTokenizer
 
 from transformers import TrainingArguments, Trainer
 from transformers import AutoModelForSequenceClassification
-
+from modelcard import ModelCard
 
 
 import torch
@@ -159,6 +161,9 @@ class rSVD_run():
 
         
     def run(self):
+        total_flops_step = None
+        flops_per_epoch = None
+        total_peak = None
     
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
@@ -292,14 +297,27 @@ class rSVD_run():
             with open(f"{output_dir}/total_program_memory.csv", "w") as f:
                 f.write("metric,value_bytes\n")
                 f.write(f"program_total_peak_memory,{total_peak}\n")
+
         full_model_dir = f"distilbert-sst2-rSVD-r{self.rank}"
         model.save_pretrained(full_model_dir)
+        self.tokenizer.save_pretrained(full_model_dir)
         print(f"[Rank {self.rank}] Saved full dense model to {full_model_dir}")
 
-        # Copy tokenizer
-        TOKENIZER_SRC_DIR = "/workspace/HPMLProj/Lora/distilbert-original"
-        os.makedirs(full_model_dir, exist_ok=True)
+        card = ModelCard()
+        eval_results = trainer.evaluate()
+        val_accuracy = eval_results.get("eval_accuracy", None)
+        card.write_model_card(
+        path=full_model_dir,
+        rank=self.rank,
+        flops_step=total_flops_step if device == "cuda" else None,
+        flops_epoch=flops_per_epoch if device == "cuda" else None,
+        peak_memory=total_peak if torch.cuda.is_available() else None,
+        val_accuracy=val_accuracy,
+        learning_rate=self.learning_rate,
+        num_epochs=self.num_train_epochs,
+        )
 
+        TOKENIZER_SRC_DIR = "/workspace/HPMLProj/Lora/distilbert-original"
         for fname in ["vocab.txt", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]:
             src = Path(TOKENIZER_SRC_DIR) / fname
             dst = Path(full_model_dir) / fname
@@ -307,4 +325,27 @@ class rSVD_run():
                 shutil.copy(src, dst)
 
         print(f"[Rank {self.rank}] Tokenizer files copied into {full_model_dir}")
+
+        token = HfFolder.get_token()
+        upload_enabled = token is not None
+
+        if not upload_enabled:
+            print("Not logged into HuggingFace Hub. Skipping upload.")
+        else:
+            print("Logged into HuggingFace Hub. Proceeding with upload...")
+
+            repo_id = f"AmitBal/distilbert-sst2-rSVD-r{self.rank}"
+
+            api = HfApi()
+
+            api.create_repo(
+            repo_id=repo_id,
+            exist_ok=True,
+            )
+
+            api.upload_folder(
+            folder_path=full_model_dir,
+            repo_id=repo_id,
+            )
+            print(f"[Rank {self.rank}] Uploaded model to the Hub at {repo_id}")
 
