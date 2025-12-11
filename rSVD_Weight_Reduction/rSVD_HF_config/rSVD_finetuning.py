@@ -8,13 +8,10 @@ from pathlib import Path
 from huggingface_hub import HfApi
 from huggingface_hub import HfFolder
 from peft import PeftModel
-from transformers import DistilBertForSequenceClassification
 
 import evaluate
 import csv
 import shutil
-import torch.nn as nn
-import torch.nn.functional as F
 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -25,20 +22,16 @@ from torch.optim.lr_scheduler import LambdaLR
 from transformers import AutoTokenizer
 
 from transformers import TrainingArguments, Trainer
-from transformers import AutoModelForSequenceClassification
 from .modelcard.model_card import ModelCard
 
 
 import torch
 
-
-def apply_rsvd_to_attention_qkv(model, rank):
-        for layer in model.distilbert.transformer.layer:
-            attn = layer.attention
-            attn.q_lin = rSVDLinear(attn.q_lin, rank)
-            attn.k_lin = rSVDLinear(attn.k_lin, rank)
-            attn.v_lin = rSVDLinear(attn.v_lin, rank)
-        return model
+from .rSVD_modeling_distilbert import (
+    rSVDLinear,
+    apply_rsvd_to_attention_qkv,
+    DistilBertForSequenceClassification_rSVD,
+)
 
 
 
@@ -102,56 +95,8 @@ class LossPerEpochCallback(TrainerCallback):
 
         print(f"[Epoch {int(state.epoch)}] train_loss={train_loss}, eval_loss={eval_loss}")
 
-class rSVDLinear(nn.Module):
-    def __init__(self, linear, rank):
-        super().__init__()
-        assert isinstance(linear, nn.Linear)
-        oversample = 8
-        in_features = linear.in_features
-        out_features = linear.out_features
-        
-        W = linear.weight.data
-        
-        q = min(rank + oversample, min(out_features, in_features))
 
-        U, S, V = torch.svd_lowrank(
-            W,
-            q=q,
-            niter=2
-        )
-        r = min(rank, S.size(0))
-        U_r = U[:, :r]
-        S_r = S[:r]
-        V_r = V[:, :r].T
 
-        self.A = nn.Parameter(U_r.clone())
-        self.C = nn.Parameter(S_r.clone())
-        self.B = nn.Parameter(V_r.clone())
-        
-        if linear.bias is not None:
-            self.bias = nn.Parameter(linear.bias.data.clone())
-        else:
-            self.bias = None
-
-        self.rank = rank
-        self.in_features = in_features
-        self.out_features = out_features
-
-    def forward(self, x):
-        W_approx = (self.A * self.C) @ self.B
-        return F.linear(x, W_approx, self.bias)
-
-class DistilBertForSequenceClassification_rSVD(DistilBertForSequenceClassification):
-    def __init__(self, config):
-        super().__init__(config)
-
-        # Extra config flags (saved with the model)
-        self.is_rsvd_model = getattr(config, "is_rsvd_model", False)
-        self.rsvd_rank = getattr(config, "rsvd_rank", None)
-
-        # If this is an rSVD model, patch the attention layers
-        if self.is_rsvd_model and self.rsvd_rank is not None:
-            apply_rsvd_to_attention_qkv(self, self.rsvd_rank)
 
 
 class rSVD_run():
