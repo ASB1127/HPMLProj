@@ -32,10 +32,11 @@ import torch
 
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
-    def __init__(self, rank, base_path="./graph"):
+    def __init__(self, rank, dataset_name, base_path="./graph"):
         self.rank = rank
         self.base_path = base_path
-        self.path = f"{base_path}/r{rank}"
+        self.path = f"{base_path}/{dataset_name}/r{rank}"
+        
 
         os.makedirs(self.path, exist_ok=True)
 
@@ -57,10 +58,11 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
                 f.write(f"{int(state.epoch)},{peak}\n")
 
 class LossPerEpochCallback(TrainerCallback):
-    def __init__(self, rank, base_path="./graph"):
+    def __init__(self, rank, dataset_name, base_path="./graph"):
         self.rank = rank
+        self.dataset_name = dataset_name
         self.base_path = base_path
-        self.path = f"{base_path}/r{rank}"
+        self.path = f"{base_path}/{dataset_name}/r{rank}"
         os.makedirs(self.path, exist_ok=True)
 
         self.csv_path = f"{self.path}/epoch_loss.csv"
@@ -96,10 +98,11 @@ class LossPerEpochCallback(TrainerCallback):
 
 class lora_run():
     
-    def __init__(self, num_train_epochs, rank, learning_rate):
+    def __init__(self, num_train_epochs, rank, learning_rate, dataset_name):
         self.num_train_epochs = num_train_epochs
         self.rank = rank
         self.learning_rate = learning_rate
+        self.dataset_name = dataset_name
         self.accuracy_metric = None
         self.tokenizer = None
         
@@ -110,7 +113,15 @@ class lora_run():
             return self.accuracy_metric.compute(predictions=preds, references=labels)
         
     def tokenize_fn(self,examples):
-            return self.tokenizer(examples["sentence"], truncation=True, padding="max_length", max_length=128)
+        if self.dataset_name == "sst2":
+            text_field = "sentence"
+        elif self.dataset_name == "imdb":
+            text_field = "text"
+        else:
+            raise ValueError(f"Unsupported dataset: {self.dataset_name}")
+
+        return self.tokenizer(examples[text_field],truncation=True,padding="max_length",max_length=128)
+
 
     def compute_keep_fraction(self, model):
         total, nz = 0, 0
@@ -127,9 +138,9 @@ class lora_run():
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
 
-        memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank)
-        loss_callback = LossPerEpochCallback(rank=self.rank)
-        rank_dir = f"./graph/r{self.rank}"
+        memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank,dataset_name=self.dataset_name)
+        loss_callback = LossPerEpochCallback(rank=self.rank,dataset_name=self.dataset_name)
+        rank_dir = f"./graph/{self.dataset_name}/r{self.rank}"
         os.makedirs(rank_dir, exist_ok=True)
 
         self.accuracy_metric = evaluate.load("accuracy")
@@ -141,7 +152,14 @@ class lora_run():
             else "cpu"
         )
 
-        dataset = load_dataset("glue", "sst2")
+        if self.dataset_name == "sst2":
+            dataset = load_dataset("glue", "sst2")
+        elif self.dataset_name == "imdb":
+            dataset = load_dataset("imdb")
+        else:
+            raise ValueError(f"Unsupported dataset: {self.dataset_name}")
+
+
         model_name = "distilbert-base-uncased"
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -170,7 +188,7 @@ class lora_run():
         model = model.to(device)
 
         args = TrainingArguments(
-            output_dir="./distilbert-sst2-lora",
+            output_dir=f"./distilbert-{self.dataset_name}-lora",
             per_device_train_batch_size=32,
             per_device_eval_batch_size=64,
             num_train_epochs=self.num_train_epochs,
@@ -187,12 +205,18 @@ class lora_run():
         scheduler = LambdaLR(optimizer, lambda _: 1.0)
 
 
+        if self.dataset_name == "sst2":
+            eval_split = "validation"
+        elif self.dataset_name == "imdb":
+            eval_split = "test"
+        else:
+            raise ValueError(f"Unsupported dataset: {self.dataset_name}")
             
         trainer = Trainer(
             model=model,
             args=args,
             train_dataset=tokenized_ds["train"],
-            eval_dataset=tokenized_ds["validation"],
+            eval_dataset=tokenized_ds[eval_split],
             tokenizer=self.tokenizer,
             compute_metrics=self.compute_metrics,
             optimizers=(optimizer, scheduler),
@@ -211,7 +235,7 @@ class lora_run():
                 out.loss.backward()
                 optimizer.step()
                 
-            batch = next(iter(train_dataloader))
+            batch = next(train_iter)
             batch = {k: v.to(device) for k, v in batch.items()}
             optimizer.zero_grad()
             
@@ -254,26 +278,20 @@ class lora_run():
                 f.write("metric,value_bytes\n")
                 f.write(f"program_total_peak_memory,{total_peak}\n")
 
-        adapter_dir = f"distilbert-sst2-lora-r{self.rank}"
+        adapter_dir = f"distilbert-{self.dataset_name}-lora-r{self.rank}"
         model.save_pretrained(adapter_dir)
         print(f"[Rank {self.rank}] Saved LoRA adapter to {adapter_dir}")
         # 2. Load ORIGINAL DistilBERT base model (stored locally)
-        BASE = "/workspace/HPMLProj/Lora/distilbert-original"
+        BASE = "distilbert-base-uncased"
+
         base_model_full = AutoModelForSequenceClassification.from_pretrained(BASE)
         # 3. Load the LoRA adapter we just saved
         model_with_adapter = PeftModel.from_pretrained(base_model_full, adapter_dir)
         # 4. Merge LoRA weights into a full model
         merged = model_with_adapter.merge_and_unload()
         # 5. Save merged full model to rank-specific folder
-        full_model_dir = f"distilbert-sst2-full-r{self.rank}"
+        full_model_dir = f"distilbert-{self.dataset_name}-full-r{self.rank}"
         merged.save_pretrained(full_model_dir)
         print(f"[Rank {self.rank}] Saved merged full model to {full_model_dir}")
         # 6. Copy tokenizer files into the merged-model directory
-        TOKENIZER_SRC_DIR = "/workspace/HPMLProj/Lora/distilbert-original"
-        os.makedirs(full_model_dir, exist_ok=True)
-        for fname in ["vocab.txt", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]:
-            src = Path(TOKENIZER_SRC_DIR) / fname
-            dst = Path(full_model_dir) / fname
-            if src.exists():
-                shutil.copy(src, dst)
         print(f"[Rank {self.rank}] Tokenizer files copied into {full_model_dir}")
