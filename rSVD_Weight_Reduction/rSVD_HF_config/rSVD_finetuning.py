@@ -36,9 +36,9 @@ from .rSVD_modeling_distilbert import (
 
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
-    def __init__(self, rank, base_path="./graph"):
+    def __init__(self, rank, dataset_name, base_path="./graph"):
         self.rank = rank
-        self.path = f"{base_path}/r{rank}"
+        self.path = f"{base_path}/{dataset_name}/r{rank}"
         os.makedirs(self.path, exist_ok=True)
 
         # CSV file for peak memory
@@ -61,9 +61,9 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
                 f.write(f"{int(state.epoch)},{peak}\n")
 
 class LossPerEpochCallback(TrainerCallback):
-    def __init__(self,rank, base_path="./graph"):
+    def __init__(self,rank, dataset_name,base_path="./graph"):
         self.rank = rank
-        self.path = f"{base_path}/r{rank}"
+        self.path = f"{base_path}/{dataset_name}/r{rank}"
         os.makedirs(self.path, exist_ok=True)
 
         # Create CSV file
@@ -101,10 +101,11 @@ class LossPerEpochCallback(TrainerCallback):
 
 class rSVD_run():
     
-    def __init__(self, num_train_epochs, rank, learning_rate):
+    def __init__(self, num_train_epochs, rank, learning_rate, dataset_name):
         self.num_train_epochs = num_train_epochs
         self.rank = rank
         self.learning_rate = learning_rate
+        self.dataset_name = dataset_name
         self.accuracy_metric = None
         self.tokenizer = None
         
@@ -115,7 +116,13 @@ class rSVD_run():
             return self.accuracy_metric.compute(predictions=preds, references=labels)
         
     def tokenize_fn(self,examples):
-            return self.tokenizer(examples["sentence"], truncation=True, padding="max_length", max_length=128)
+        if self.dataset_name == "sst2":
+            text_field = "sentence"
+        elif self.dataset_name == "imdb":
+            text_field = "text"
+        else:
+            raise ValueError(f"Unsupported dataset: {self.dataset_name}")
+        return self.tokenizer(examples[text_field],truncation=True,padding="max_length",max_length=128)
 
         
     def run(self):
@@ -126,9 +133,9 @@ class rSVD_run():
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
 
-        memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank,base_path="./rSVD_finetuning_results")
-        loss_callback = LossPerEpochCallback(rank=self.rank,base_path="./rSVD_finetuning_results")
-        output_dir = "./rSVD_finetuning_results"
+        memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank,dataset_name=self.dataset_name)
+        loss_callback = LossPerEpochCallback(rank=self.rank,dataset_name=self.dataset_name)
+        output_dir = f"./graph/{self.dataset_name}/r{self.rank}"
         os.makedirs(output_dir, exist_ok=True)
 
         self.accuracy_metric = evaluate.load("accuracy")
@@ -139,8 +146,12 @@ class rSVD_run():
             else "cuda" if torch.cuda.is_available()
             else "cpu"
         )
-
-        dataset = load_dataset("glue", "sst2")
+        if self.dataset_name == "sst2":
+            dataset = load_dataset("glue", "sst2")
+        elif self.dataset_name == "imdb":
+            dataset = load_dataset("imdb")
+        else:
+            raise ValueError(f"Unsupported dataset: {self.dataset_name}")
         model_name = "distilbert-base-uncased"
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -172,7 +183,7 @@ class rSVD_run():
 
         model=model.to(device)
         args = TrainingArguments(
-            output_dir="./distilbert-sst2-rSVD",
+            output_dir=f"./distilbert-{self.dataset_name}-rSVD",
             per_device_train_batch_size=32,
             per_device_eval_batch_size=64,
             num_train_epochs=self.num_train_epochs,
@@ -191,11 +202,17 @@ class rSVD_run():
 
 
             
+        if self.dataset_name == "sst2":
+            eval_split = "validation"
+        elif self.dataset_name == "imdb":
+            eval_split = "test"
+        else:
+            raise ValueError(f"Unsupported dataset: {self.dataset_name}")
         trainer = Trainer(
             model=model,
             args=args,
             train_dataset=tokenized_ds["train"],
-            eval_dataset=tokenized_ds["validation"],
+            eval_dataset=tokenized_ds[eval_split],
             tokenizer=self.tokenizer,
             compute_metrics=self.compute_metrics,
             optimizers=(optimizer, scheduler),
@@ -204,20 +221,19 @@ class rSVD_run():
         )
 
         train_dataloader = trainer.get_train_dataloader()
-
-        train_iter = iter(train_dataloader)
-        for _ in range(3):
-            batch = next(train_iter)
-            batch = {k: v.to(device) for k, v in batch.items()}
-            optimizer.zero_grad()
-            out = model(**batch)
-            out.loss.backward()
-            optimizer.step()
-
         if device == "cuda":
+            train_iter = iter(train_dataloader)
+            for _ in range(3):
+                batch = next(train_iter)
+                batch = {k: v.to(device) for k, v in batch.items()}
+                optimizer.zero_grad()
+                out = model(**batch)
+                out.loss.backward()
+                optimizer.step()
+    
             batch = next(train_iter)
             batch = {k: v.to(device) for k, v in batch.items()}
-
+    
             with autograd_profiler.profile(
                 with_flops=True,
                 use_cuda=True,
@@ -230,18 +246,14 @@ class rSVD_run():
                 loss.backward()
                 optimizer.step()
 
-        
+    
             total_flops_step = sum(
-                e.flops for e in prof.key_averages() if e.flops is not None
-            )
+            e.flops for e in prof.key_averages() if e.flops is not None
+        )
             print(f"[Profiler] FLOPs for one training step: {total_flops_step:,}")
-
-
             num_batches = len(train_dataloader)
             flops_per_epoch = total_flops_step * num_batches
             print(f"[Profiler] FLOPs per epoch (approx): {flops_per_epoch:,}")
-
-
             with open(f"{output_dir}/flops_profiler_stats.csv", "w") as f:
                 f.write("metric,value\n")
                 f.write(f"step_flops,{total_flops_step}\n")
@@ -263,7 +275,7 @@ class rSVD_run():
                 f.write("metric,value_bytes\n")
                 f.write(f"program_total_peak_memory,{total_peak}\n")
 
-        full_model_dir = f"distilbert-sst2-rSVD-r{self.rank}"
+        full_model_dir = f"distilbert-{self.dataset_name}-rSVD-r{self.rank}"
 
         model.config.is_rsvd_model = True
         model.config.rsvd_rank = self.rank
@@ -288,12 +300,7 @@ class rSVD_run():
         num_epochs=self.num_train_epochs,
         )
 
-        TOKENIZER_SRC_DIR = "/workspace/HPMLProj/Lora/distilbert-original"
-        for fname in ["vocab.txt", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]:
-            src = Path(TOKENIZER_SRC_DIR) / fname
-            dst = Path(full_model_dir) / fname
-            if src.exists():
-                shutil.copy(src, dst)
+        
 
         print(f"[Rank {self.rank}] Tokenizer files copied into {full_model_dir}")
 
@@ -305,7 +312,7 @@ class rSVD_run():
         else:
             print("Logged into HuggingFace Hub. Proceeding with upload...")
 
-            repo_id = f"ab2720/distilbert-sst2-rSVD-r{self.rank}"
+            repo_id = f"ab2720/distilbert-{self.dataset_name}-rSVD-r{self.rank}"
 
             api = HfApi()
 
