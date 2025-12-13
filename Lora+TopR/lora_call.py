@@ -1,7 +1,7 @@
 from lora_config.lora import lora_run, MemoryPeakPerEpochCallback
 
 num_train_epochs, learning_rate = 10, 2e-4
-top_rs = [0.1, 0.2, 0.3, 0.4, 0.5]
+top_rs = [0.1, 0.3, 0.5]
 ranks = [4,8,16,64,128]
 datasets = ['sst2', 'imdb']
 for dataset in datasets:
