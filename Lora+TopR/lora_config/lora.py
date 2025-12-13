@@ -32,10 +32,11 @@ import torch
 
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
-    def __init__(self, rank, dataset_name, base_path="./graph"):
+    def __init__(self, rank, dataset_name, top_r, base_path="./graph"):
         self.rank = rank
         self.base_path = base_path
-        self.path = f"{base_path}/{dataset_name}/r{rank}"
+        self.top_r = top_r
+        self.path = f"{base_path}/{dataset_name}/r{rank}/topr{top_r}"
         
 
         os.makedirs(self.path, exist_ok=True)
@@ -58,11 +59,12 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
                 f.write(f"{int(state.epoch)},{peak}\n")
 
 class LossPerEpochCallback(TrainerCallback):
-    def __init__(self, rank, dataset_name, base_path="./graph"):
+    def __init__(self, rank, dataset_name, top_r, base_path="./graph"):
         self.rank = rank
         self.dataset_name = dataset_name
         self.base_path = base_path
-        self.path = f"{base_path}/{dataset_name}/r{rank}"
+        self.top_r = top_r
+        self.path = f"{base_path}/{dataset_name}/r{rank}/topr{top_r}"
         os.makedirs(self.path, exist_ok=True)
 
         self.csv_path = f"{self.path}/epoch_loss.csv"
@@ -163,9 +165,9 @@ class lora_run():
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
 
-        memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank,dataset_name=self.dataset_name)
-        loss_callback = LossPerEpochCallback(rank=self.rank,dataset_name=self.dataset_name)
-        rank_dir = f"./graph/{self.dataset_name}/r{self.rank}"
+        memory_peak_callback = MemoryPeakPerEpochCallback(rank=self.rank,dataset_name=self.dataset_name,top_r=self.top_r)
+        loss_callback = LossPerEpochCallback(rank=self.rank,dataset_name=self.dataset_name,top_r=self.top_r)
+        rank_dir = f"./graph/{self.dataset_name}/r{self.rank}/topr{self.top_r}"
         os.makedirs(rank_dir, exist_ok=True)
 
         self.accuracy_metric = evaluate.load("accuracy")
