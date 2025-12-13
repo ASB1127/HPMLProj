@@ -306,7 +306,11 @@ class lora_run():
                 f.write("metric,value_bytes\n")
                 f.write(f"program_total_peak_memory,{total_peak}\n")
 
-        adapter_dir = f"distilbert-{self.dataset_name}-lora-r{self.rank}"
+        models_dir = "./models"
+        os.makedirs(models_dir, exist_ok=True)
+        topr_tag = f"topr{self.top_r:g}"
+
+        adapter_dir = f"{models_dir}/distilbert-{self.dataset_name}-lora-r{self.rank}-{topr_tag}"
         model.save_pretrained(adapter_dir)
         print(f"[Rank {self.rank}] Saved LoRA adapter to {adapter_dir}")
         # 2. Load ORIGINAL DistilBERT base model (stored locally)
@@ -318,8 +322,9 @@ class lora_run():
         # 4. Merge LoRA weights into a full model
         merged = model_with_adapter.merge_and_unload()
         # 5. Save merged full model to rank-specific folder
-        full_model_dir = f"distilbert-{self.dataset_name}-full-r{self.rank}"
+        full_model_dir = f"{models_dir}/distilbert-{self.dataset_name}-full-r{self.rank}-{topr_tag}"
         merged.save_pretrained(full_model_dir)
         print(f"[Rank {self.rank}] Saved merged full model to {full_model_dir}")
         # 6. Copy tokenizer files into the merged-model directory
+        self.tokenizer.save_pretrained(full_model_dir)
         print(f"[Rank {self.rank}] Tokenizer files copied into {full_model_dir}")
