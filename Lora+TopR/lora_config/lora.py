@@ -98,11 +98,13 @@ class LossPerEpochCallback(TrainerCallback):
 
 class lora_run():
     
-    def __init__(self, num_train_epochs, rank, learning_rate, dataset_name):
+    def __init__(self, num_train_epochs, rank, learning_rate, dataset_name, top_r: float = 0.1):
         self.num_train_epochs = num_train_epochs
         self.rank = rank
         self.learning_rate = learning_rate
         self.dataset_name = dataset_name
+        assert 0 < top_r <= 1.0, "top_r must be in (0, 1]."
+        self.top_r = float(top_r)
         self.accuracy_metric = None
         self.tokenizer = None
         
@@ -132,6 +134,29 @@ class lora_run():
             total += g.numel()
             nz += (g != 0).sum().item()
         return nz / total if total > 0 else 1.0
+
+    def warn_if_topr_too_small(self, model):
+        if self.top_r >= 1.0:
+            return
+        total_tensors = 0
+        zeroed_tensors = 0
+        for name, p in model.named_parameters():
+            if "lora_" not in name:
+                continue
+            numel = p.numel()
+            if numel == 0:
+                continue
+            total_tensors += 1
+            k = int(self.top_r * numel)
+            if k <= 0:
+                zeroed_tensors += 1
+
+        if total_tensors > 0 and zeroed_tensors > 0:
+            frac = zeroed_tensors / total_tensors
+            print(
+                f"[Top-R WARNING] top_r={self.top_r} causes k=0 for {zeroed_tensors}/{total_tensors} "
+                f"LoRA tensors ({frac:.1%}); their grads will be fully masked."
+            )
         
     def run(self):
     
@@ -186,6 +211,7 @@ class lora_run():
         model = get_peft_model(base_model, lora_config)
         model.print_trainable_parameters()
         model = model.to(device)
+        self.warn_if_topr_too_small(model)
 
         args = TrainingArguments(
             output_dir=f"./distilbert-{self.dataset_name}-lora",
@@ -201,7 +227,7 @@ class lora_run():
             fp16 = False,
             bf16 = False,
         )
-        optimizer = TopRAdamW(model.parameters(), lr=self.learning_rate, top_r = 0.1)
+        optimizer = TopRAdamW(model.parameters(), lr=self.learning_rate, top_r=self.top_r)
         scheduler = LambdaLR(optimizer, lambda _: 1.0)
 
 

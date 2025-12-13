@@ -16,7 +16,10 @@ class TopRAdamW(AdamW):
                         continue
 
                     g = p.grad
-                    flat = g.view(-1)
+                    if g.is_sparse:
+                        continue
+
+                    flat = g.reshape(-1)
                     numel = flat.numel()
                     if numel == 0:
                         continue
@@ -30,9 +33,10 @@ class TopRAdamW(AdamW):
                     if k >= numel:
                         continue
 
-                    thresh = flat.abs().kthvalue(numel - k).values
-
-                    mask = (flat.abs() >= thresh)
+                    # Keep exactly the top-k magnitudes (avoids off-by-one and tie issues).
+                    topk_idx = flat.abs().topk(k, largest=True, sorted=False).indices
+                    mask = torch.zeros_like(flat, dtype=torch.bool)
+                    mask.scatter_(0, topk_idx, True)
                     flat.mul_(mask)
 
         return super().step(closure)
