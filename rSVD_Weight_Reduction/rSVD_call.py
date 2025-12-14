@@ -9,4 +9,4 @@ for dataset in datasets:
     for rank in ranks:
         runner = rSVD_run(num_train_epochs, rank, learning_rate,dataset)
         runner.run()
-        profiler_forward(rank,dataset).runner()
+        profiler_forward( dataset=dataset, rank=rank).runner()
