@@ -23,7 +23,7 @@ from transformers import AutoTokenizer
 
 from transformers import TrainingArguments, Trainer
 from .modelcard.model_card import ModelCard
-
+from .rSVD_modeling_distilbert import rSVDLinear, svd_truncate_factors_
 
 import torch
 
@@ -96,6 +96,47 @@ class LossPerEpochCallback(TrainerCallback):
         print(f"[Epoch {int(state.epoch)}] train_loss={train_loss}, eval_loss={eval_loss}")
 
 
+class SingularValueTruncationCallback(TrainerCallback):
+    def __init__(self, keep_rank: int, every_n_steps: int = 50):
+        self.keep_rank = keep_rank
+        self.every_n_steps = every_n_steps
+
+    def _apply_truncation(self, model):
+        model_was_training = model.training
+        model.eval()
+        with torch.no_grad():
+            for module in model.modules():
+                if isinstance(module, rSVDLinear):
+                    if hasattr(module, "A") and hasattr(module, "B") and hasattr(module, "C"):
+                        A = module.A
+                        B = module.B
+                        C = module.C
+                        r = A.shape[1]
+                        k = min(self.keep_rank, r)
+
+                        if k < r:
+                            A_new, C_new, B_new = svd_truncate_factors_(A, B, C, k)
+                            A.zero_()
+                            B.zero_()
+                            A[:, :k].copy_(A_new)
+                            B[:k, :].copy_(B_new)
+                            C.zero_()
+                            C[:k].copy_(C_new)
+        if model_was_training:
+            model.train()
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if self.every_n_steps is not None and self.every_n_steps > 0:
+            if state.global_step > 0 and (state.global_step % self.every_n_steps == 0):
+                model = kwargs.get("model", None)
+                if model is not None:
+                    self._apply_truncation(model)
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        model = kwargs.get("model", None)
+        if model is not None:
+            self._apply_truncation(model)
+                                
 
 
 
@@ -174,11 +215,13 @@ class rSVD_run():
 
         model = base_model
         model = model.to(device)
+        for p in model.parameters():
+            p.requires_grad = False
         apply_rsvd_to_attention_qkv(model, self.rank)
         for p in model.parameters():
             p.requires_grad = False
         for name, p in model.named_parameters():
-            if any(s in name for s in [".A", ".B", ".C", "classifier"]):
+            if ("A" in name) or ("B" in name) or ("C" in name) or ("classifier" in name):
                 p.requires_grad = True
 
         model=model.to(device)
@@ -208,6 +251,8 @@ class rSVD_run():
             eval_split = "test"
         else:
             raise ValueError(f"Unsupported dataset: {self.dataset_name}")
+
+        svt_callback = SingularValueTruncationCallback(keep_rank=self.rank//2, every_n_steps=50)
         trainer = Trainer(
             model=model,
             args=args,
@@ -216,7 +261,7 @@ class rSVD_run():
             tokenizer=self.tokenizer,
             compute_metrics=self.compute_metrics,
             optimizers=(optimizer, scheduler),
-            callbacks=[memory_peak_callback, loss_callback],   
+            callbacks=[memory_peak_callback, loss_callback, svt_callback], 
             
         )
 
