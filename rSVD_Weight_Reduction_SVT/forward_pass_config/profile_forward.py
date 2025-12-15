@@ -6,9 +6,10 @@ from torch.autograd import profiler as autograd_profiler
 
 
 class profiler_forward():
-    def __init__(self, rank):
+    def __init__(self, rank, dataset):
         self.rank = rank
-        self.MODEL_DIR = f"/workspace/HPMLProj/rSVD_Weight_Reduction/distilbert-sst2-rSVD-r{rank}"
+        self.dataset = dataset
+        self.MODEL_DIR = f"/workspace/HPMLProj/rSVD_Weight_Reduction_SVT/distilbert-{dataset}-rSVD-r{rank}"
 
         self.DEVICE = "cuda"
 
@@ -31,7 +32,7 @@ class profiler_forward():
     def profile_forward(self,tokenizer, model):
         text = "This movie was absolutely fantastic! Highly recommended."
         inputs = tokenizer(text, return_tensors="pt").to(self.DEVICE)
-        SAVE_DIR = f"./graph/r{self.rank}/forward_pass"
+        SAVE_DIR = f"./graph/{self.dataset}/r{self.rank}/forward_pass"
         os.makedirs(SAVE_DIR, exist_ok=True)
         
 
