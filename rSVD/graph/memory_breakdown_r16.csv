@@ -1,0 +1,20 @@
+component,memory_mb,memory_bytes,details
+batch_size,32,32,Batch size used for profiling
+gradient_accumulation_steps,4,4,Number of gradient accumulation steps (effective batch = 128)
+parameters_total,255.41309356689453,267820040,
+parameters_trainable,255.41309356689453,267820040,
+optimizer_states_total,10.249656677246094,10747544,
+optimizer_state_proj,4.460578918457031,4677256,
+optimizer_state_exp_avg_low,2.6572265625,2786304,
+optimizer_state_exp_avg_sq_low,2.6572265625,2786304,
+optimizer_state_exp_avg,0.23731231689453125,248840,
+optimizer_state_exp_avg_sq,0.23731231689453125,248840,
+activations_total,1188.562744140625,1246298368,
+gradients_total,255.41309356689453,267820040,
+cuda_allocated_mb,810.61083984375,849987072,
+cuda_reserved_mb,2280.0,2390753280,
+cuda_active_mb,810.61083984375,849987072,
+cuda_inactive_split_mb,193.38916015625,202783232,
+cuda_peak_allocated_mb,2090.44482421875,2191990272,
+cuda_peak_reserved_mb,2280.0,2390753280,
+total_components,1709.6385879516602,1792685992,Sum of Parameters + Optimizer + Activations + Gradients

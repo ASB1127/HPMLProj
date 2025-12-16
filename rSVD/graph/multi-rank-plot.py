@@ -71,6 +71,11 @@ for rank in RANKS:
             "loss": pd.read_csv(f"{rank_dir}/epoch_loss.csv"),
         }
         
+        # Load training accuracy data if available
+        train_acc_path = f"{rank_dir}/epoch_train_accuracy.csv"
+        if os.path.exists(train_acc_path):
+            data[rank]["train_acc"] = pd.read_csv(train_acc_path)
+        
         # Load forward pass data if available
         forward_pass_dir = os.path.join(rank_dir, "forward_pass")
         if os.path.exists(forward_pass_dir):
@@ -128,7 +133,87 @@ if not data:
     exit(1)
 
 # =========================================
-# PLOT 1 — Loss curves for all ranks
+# PLOT 1 — Training Loss curves for all ranks
+# =========================================
+plt.figure(figsize=(8,6))
+for rank in RANKS:
+    if rank not in data:
+        continue
+    df = data[rank]["loss"]
+    label = f"Rank {rank}"
+    # Convert empty strings to NaN for numeric columns
+    df["train_loss"] = pd.to_numeric(df["train_loss"], errors="coerce")
+    
+    if df["train_loss"].notna().any():
+        plt.plot(df["epoch"], df["train_loss"], marker="o", label=label, linewidth=2, markersize=6)
+
+plt.title("Training Loss per Epoch Across rSVD Ranks", fontsize=14)
+plt.xlabel("Epoch")
+plt.ylabel("Training Loss")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.legend()
+plt.tight_layout()
+plt.savefig("./plots/training_loss_across_ranks.png", dpi=300)
+plt.close()
+print("✓ Saved training_loss_across_ranks.png")
+
+# =========================================
+# PLOT 1a — Training Accuracy curves for all ranks
+# =========================================
+plt.figure(figsize=(8,6))
+for rank in RANKS:
+    if rank not in data:
+        continue
+    if "train_acc" not in data[rank]:
+        continue
+    df = data[rank]["train_acc"]
+    label = f"Rank {rank}"
+    # Convert to numeric in case of any issues
+    df["train_accuracy"] = pd.to_numeric(df["train_accuracy"], errors="coerce")
+    
+    if df["train_accuracy"].notna().any():
+        plt.plot(df["epoch"], df["train_accuracy"], marker="o", label=label, linewidth=2, markersize=6)
+
+plt.title("Training Accuracy per Epoch Across rSVD Ranks", fontsize=14)
+plt.xlabel("Epoch")
+plt.ylabel("Training Accuracy")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.legend()
+plt.tight_layout()
+plt.savefig("./plots/training_accuracy_across_ranks.png", dpi=300)
+plt.close()
+print("✓ Saved training_accuracy_across_ranks.png")
+
+# =========================================
+# PLOT 1c — Average Validation Loss vs Rank (Bar Graph)
+# =========================================
+avg_eval_loss_summary = {}
+for rank in RANKS:
+    if rank not in data:
+        continue
+    df = data[rank]["loss"]
+    df["eval_loss"] = pd.to_numeric(df["eval_loss"], errors="coerce")
+    
+    if df["eval_loss"].notna().any():
+        avg_eval_loss_summary[rank] = df["eval_loss"].mean()
+
+if avg_eval_loss_summary:
+    plt.figure(figsize=(8,5))
+    ranks_sorted = sorted(avg_eval_loss_summary.keys())
+    values = [avg_eval_loss_summary[r] for r in ranks_sorted]
+    labels = [f"r{r}" for r in ranks_sorted]
+    plt.bar(labels, values, color=plt.cm.Set3(range(len(ranks_sorted))))
+    plt.xlabel("Rank")
+    plt.ylabel("Average Validation Loss")
+    plt.title("Average Validation Loss vs rSVD Rank")
+    plt.grid(axis="y", linestyle="--", alpha=0.5)
+    plt.tight_layout()
+    plt.savefig("./plots/avg_validation_loss_vs_rank.png", dpi=300)
+    plt.close()
+    print("✓ Saved avg_validation_loss_vs_rank.png")
+
+# =========================================
+# PLOT 1b — Loss curves for all ranks (train + eval)
 # =========================================
 plt.figure(figsize=(8,6))
 for rank in RANKS:
