@@ -1,0 +1,6 @@
+metric,value
+masked_step_flops,684274778112
+masked_epoch_flops,1440398407925760
+topr_keep_fraction,0.09993489583333333
+topr_effective_step_flops,68382928672.0
+topr_effective_epoch_flops,143946064854560.0
