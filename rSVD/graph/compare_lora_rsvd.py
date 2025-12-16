@@ -21,8 +21,9 @@ import numpy as np
 
 # Configuration
 # Paths relative to where script is run (should be from rSVD/graph directory)
-LORA_BASE_PATH = "../../Lora/graph"
+LORA_BASE_PATH = "../../Lora/graph/sst2"  # LoRA data is in sst2 subdirectory
 RSVD_BASE_PATH = "."
+RSVD_SVT_BASE_PATH = "../../rSVD_SVT_Fixed_Rank/sst/graph"  # rSVD SVT data
 OUTPUT_DIR = "./plots"
 
 # Define which ranks to compare (should match between LoRA and rSVD)
@@ -304,17 +305,19 @@ def plot_memory_vs_rank(lora_data, rsvd_data):
     print("✓ Saved memory_vs_rank.png")
 
 
-def plot_flops_vs_rank(lora_data, rsvd_data):
+def plot_flops_vs_rank(lora_data, rsvd_data, rsvd_svt_data=None):
     """Plot FLOPs per step vs rank."""
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(10, 6))
     
     lora_flops = []
     rsvd_flops = []
+    rsvd_svt_flops = []
     available_ranks = []
     
     for rank in RANKS:
         lora_flop = None
         rsvd_flop = None
+        rsvd_svt_flop = None
         
         if rank in lora_data and lora_data[rank] and 'flops' in lora_data[rank]:
             df = lora_data[rank]['flops']
@@ -328,16 +331,26 @@ def plot_flops_vs_rank(lora_data, rsvd_data):
             if len(step_flops) > 0:
                 rsvd_flop = step_flops[0] / 1e12
         
-        if lora_flop is not None or rsvd_flop is not None:
+        if rsvd_svt_data and rank in rsvd_svt_data and rsvd_svt_data[rank] and 'flops' in rsvd_svt_data[rank]:
+            df = rsvd_svt_data[rank]['flops']
+            step_flops = df.loc[df['metric'] == 'step_flops', 'value'].values
+            if len(step_flops) > 0:
+                rsvd_svt_flop = step_flops[0] / 1e12
+        
+        if lora_flop is not None or rsvd_flop is not None or rsvd_svt_flop is not None:
             available_ranks.append(rank)
             lora_flops.append(lora_flop if lora_flop is not None else np.nan)
             rsvd_flops.append(rsvd_flop if rsvd_flop is not None else np.nan)
+            rsvd_svt_flops.append(rsvd_svt_flop if rsvd_svt_flop is not None else np.nan)
     
     if available_ranks:
         ax.plot(available_ranks, lora_flops, marker='o', label='LoRA', 
                 linewidth=2, markersize=8, color='#ff7f0e')
         ax.plot(available_ranks, rsvd_flops, marker='s', label='rSVD', 
                 linewidth=2, markersize=8, color='#2ca02c')
+        if rsvd_svt_data:
+            ax.plot(available_ranks, rsvd_svt_flops, marker='^', label='rSVD SVT', 
+                    linewidth=2, markersize=8, color='#9467bd', linestyle=':')
         ax.set_xlabel('Rank', fontsize=12)
         ax.set_ylabel('FLOPs per Step (TFLOPs)', fontsize=12)
         ax.set_title('Compute Cost (FLOPs per Step) vs Rank', fontsize=14, fontweight='bold')
@@ -346,15 +359,20 @@ def plot_flops_vs_rank(lora_data, rsvd_data):
         ax.set_xticks(available_ranks)
     
     plt.tight_layout()
-    plt.savefig(os.path.join(OUTPUT_DIR, "flops_vs_rank.png"), dpi=300)
+    plt.savefig(os.path.join(OUTPUT_DIR, "flops_comparison_lora_rsvd.png"), dpi=300)
     plt.close()
-    print("✓ Saved flops_vs_rank.png")
+    print("✓ Saved flops_comparison_lora_rsvd.png")
 
 
 def plot_summary_by_rank(lora_data, rsvd_data):
     """Create summary comparison plots grouped by rank."""
-    num_ranks = len([r for r in RANKS if (r in lora_data and lora_data[r]) or (r in rsvd_data and rsvd_data[r])])
-    if num_ranks == 0:
+    # Build list of available ranks (where at least one method has data)
+    ranks_list = []
+    for rank in RANKS:
+        if (rank in lora_data and lora_data[rank]) or (rank in rsvd_data and rsvd_data[rank]):
+            ranks_list.append(rank)
+    
+    if len(ranks_list) == 0:
         return
     
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -363,39 +381,31 @@ def plot_summary_by_rank(lora_data, rsvd_data):
     ax = axes[0, 0]
     lora_train = []
     rsvd_train = []
-    ranks_list = []
     
-    for rank in RANKS:
+    for rank in ranks_list:
         if rank in lora_data and lora_data[rank] and 'loss' in lora_data[rank]:
             final_loss = lora_data[rank]['loss']['train_loss'].iloc[-1]
             lora_train.append(final_loss)
-            if rank not in ranks_list:
-                ranks_list.append(rank)
         else:
-            if rank in ranks_list:
-                lora_train.append(np.nan)
+            lora_train.append(np.nan)
         
         if rank in rsvd_data and rsvd_data[rank] and 'loss' in rsvd_data[rank]:
             final_loss = rsvd_data[rank]['loss']['train_loss'].iloc[-1]
             rsvd_train.append(final_loss)
-            if rank not in ranks_list:
-                ranks_list.append(rank)
         else:
-            if rank in ranks_list:
-                rsvd_train.append(np.nan)
+            rsvd_train.append(np.nan)
     
-    if ranks_list:
-        x = np.arange(len(ranks_list))
-        width = 0.35
-        ax.bar(x - width/2, lora_train, width, label='LoRA', color='#ff7f0e', alpha=0.8)
-        ax.bar(x + width/2, rsvd_train, width, label='rSVD', color='#2ca02c', alpha=0.8)
-        ax.set_xlabel('Rank', fontsize=11)
-        ax.set_ylabel('Final Training Loss', fontsize=11)
-        ax.set_title('Final Training Loss by Rank', fontsize=12, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels([f'r{r}' for r in ranks_list])
-        ax.legend()
-        ax.grid(True, alpha=0.3, axis='y')
+    x = np.arange(len(ranks_list))
+    width = 0.35
+    ax.bar(x - width/2, lora_train, width, label='LoRA', color='#ff7f0e', alpha=0.8)
+    ax.bar(x + width/2, rsvd_train, width, label='rSVD', color='#2ca02c', alpha=0.8)
+    ax.set_xlabel('Rank', fontsize=11)
+    ax.set_ylabel('Final Training Loss', fontsize=11)
+    ax.set_title('Final Training Loss by Rank', fontsize=12, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels([f'r{r}' for r in ranks_list])
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis='y')
     
     # 2. Final Validation Loss by Rank
     ax = axes[0, 1]
@@ -421,16 +431,15 @@ def plot_summary_by_rank(lora_data, rsvd_data):
         else:
             rsvd_eval.append(np.nan)
     
-    if ranks_list:
-        ax.bar(x - width/2, lora_eval, width, label='LoRA', color='#ff7f0e', alpha=0.8)
-        ax.bar(x + width/2, rsvd_eval, width, label='rSVD', color='#2ca02c', alpha=0.8)
-        ax.set_xlabel('Rank', fontsize=11)
-        ax.set_ylabel('Final Validation Loss', fontsize=11)
-        ax.set_title('Final Validation Loss by Rank', fontsize=12, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels([f'r{r}' for r in ranks_list])
-        ax.legend()
-        ax.grid(True, alpha=0.3, axis='y')
+    ax.bar(x - width/2, lora_eval, width, label='LoRA', color='#ff7f0e', alpha=0.8)
+    ax.bar(x + width/2, rsvd_eval, width, label='rSVD', color='#2ca02c', alpha=0.8)
+    ax.set_xlabel('Rank', fontsize=11)
+    ax.set_ylabel('Final Validation Loss', fontsize=11)
+    ax.set_title('Final Validation Loss by Rank', fontsize=12, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels([f'r{r}' for r in ranks_list])
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis='y')
     
     # 3. Peak Memory by Rank
     ax = axes[1, 0]
@@ -448,16 +457,15 @@ def plot_summary_by_rank(lora_data, rsvd_data):
         else:
             rsvd_mem.append(np.nan)
     
-    if ranks_list:
-        ax.bar(x - width/2, lora_mem, width, label='LoRA', color='#ff7f0e', alpha=0.8)
-        ax.bar(x + width/2, rsvd_mem, width, label='rSVD', color='#2ca02c', alpha=0.8)
-        ax.set_xlabel('Rank', fontsize=11)
-        ax.set_ylabel('Peak Memory (GB)', fontsize=11)
-        ax.set_title('Peak Training Memory by Rank', fontsize=12, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels([f'r{r}' for r in ranks_list])
-        ax.legend()
-        ax.grid(True, alpha=0.3, axis='y')
+    ax.bar(x - width/2, lora_mem, width, label='LoRA', color='#ff7f0e', alpha=0.8)
+    ax.bar(x + width/2, rsvd_mem, width, label='rSVD', color='#2ca02c', alpha=0.8)
+    ax.set_xlabel('Rank', fontsize=11)
+    ax.set_ylabel('Peak Memory (GB)', fontsize=11)
+    ax.set_title('Peak Training Memory by Rank', fontsize=12, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels([f'r{r}' for r in ranks_list])
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis='y')
     
     # 4. FLOPs by Rank
     ax = axes[1, 1]
@@ -485,16 +493,15 @@ def plot_summary_by_rank(lora_data, rsvd_data):
         else:
             rsvd_flops.append(np.nan)
     
-    if ranks_list:
-        ax.bar(x - width/2, lora_flops, width, label='LoRA', color='#ff7f0e', alpha=0.8)
-        ax.bar(x + width/2, rsvd_flops, width, label='rSVD', color='#2ca02c', alpha=0.8)
-        ax.set_xlabel('Rank', fontsize=11)
-        ax.set_ylabel('FLOPs per Step (TFLOPs)', fontsize=11)
-        ax.set_title('Compute Cost by Rank', fontsize=12, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels([f'r{r}' for r in ranks_list])
-        ax.legend()
-        ax.grid(True, alpha=0.3, axis='y')
+    ax.bar(x - width/2, lora_flops, width, label='LoRA', color='#ff7f0e', alpha=0.8)
+    ax.bar(x + width/2, rsvd_flops, width, label='rSVD', color='#2ca02c', alpha=0.8)
+    ax.set_xlabel('Rank', fontsize=11)
+    ax.set_ylabel('FLOPs per Step (TFLOPs)', fontsize=11)
+    ax.set_title('Compute Cost by Rank', fontsize=12, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels([f'r{r}' for r in ranks_list])
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis='y')
     
     plt.suptitle('LoRA vs rSVD: Summary Comparison Across Ranks', fontsize=16, fontweight='bold', y=0.995)
     plt.tight_layout()
@@ -515,15 +522,24 @@ def main():
     print("Loading data...")
     lora_data = {}
     rsvd_data = {}
+    rsvd_svt_data = {}
     
     for rank in RANKS:
         lora_data[rank] = load_data(LORA_BASE_PATH, rank, "LoRA")
         rsvd_data[rank] = load_data(RSVD_BASE_PATH, rank, "rSVD")
         
+        # Try to load rSVD SVT data if path exists
+        if os.path.exists(RSVD_SVT_BASE_PATH):
+            rsvd_svt_data[rank] = load_data(RSVD_SVT_BASE_PATH, rank, "rSVD SVT")
+        else:
+            rsvd_svt_data[rank] = None
+        
         if lora_data[rank]:
             print(f"  ✓ Loaded LoRA r{rank}")
         if rsvd_data[rank]:
             print(f"  ✓ Loaded rSVD r{rank}")
+        if rsvd_svt_data[rank]:
+            print(f"  ✓ Loaded rSVD SVT r{rank}")
     
     print("\nGenerating comparison plots...")
     print("-" * 80)
@@ -532,7 +548,7 @@ def main():
     plot_loss_comparison_across_ranks(lora_data, rsvd_data)
     plot_final_loss_vs_rank(lora_data, rsvd_data)
     plot_memory_vs_rank(lora_data, rsvd_data)
-    plot_flops_vs_rank(lora_data, rsvd_data)
+    plot_flops_vs_rank(lora_data, rsvd_data, rsvd_svt_data if any(rsvd_svt_data.values()) else None)
     plot_summary_by_rank(lora_data, rsvd_data)
     
     print("\n" + "=" * 80)
@@ -542,7 +558,7 @@ def main():
     print("  - loss_comparison_across_ranks.png")
     print("  - final_loss_vs_rank.png")
     print("  - memory_vs_rank.png")
-    print("  - flops_vs_rank.png")
+    print("  - flops_comparison_lora_rsvd.png")
     print("  - summary_comparison_across_ranks.png")
 
 
