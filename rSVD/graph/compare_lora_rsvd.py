@@ -23,6 +23,7 @@ import numpy as np
 # Paths relative to where script is run (should be from rSVD/graph directory)
 LORA_BASE_PATH = "../../Lora/graph/sst2"  # LoRA data is in sst2 subdirectory
 RSVD_BASE_PATH = "."
+RSVD_WEIGHT_REDUCTION_BASE_PATH = "../../rSVD_Weight_Reduction/graph/sst2"
 RSVD_SVT_BASE_PATH = "../../rSVD_SVT_Fixed_Rank/sst/graph"  # rSVD SVT data
 OUTPUT_DIR = "./plots"
 
@@ -32,7 +33,7 @@ RANKS = [4, 8, 16, 64, 128]
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-def load_data(base_path, rank, method_name):
+def load_data(base_path, rank, method_name, rank_dir_template="r{rank}"):
     """
     Load data for a specific rank.
     
@@ -40,11 +41,12 @@ def load_data(base_path, rank, method_name):
         base_path: Base path to the graph directory
         rank: Rank number
         method_name: Name of the method (for error messages)
+        rank_dir_template: Rank directory template (default: "r{rank}")
     
     Returns:
         Dictionary with loaded dataframes, or None if data not found
     """
-    rank_dir = os.path.join(base_path, f"r{rank}")
+    rank_dir = os.path.join(base_path, rank_dir_template.format(rank=rank))
     
     if not os.path.exists(rank_dir):
         return None
@@ -92,8 +94,8 @@ def load_data(base_path, rank, method_name):
 
 
 def plot_loss_comparison_across_ranks(lora_data, rsvd_data):
-    """Plot training and validation loss comparison across ranks."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    """Plot training loss comparison across ranks."""
+    fig, ax1 = plt.subplots(1, 1, figsize=(10, 6))
     
     # Training Loss
     for rank in RANKS:
@@ -113,30 +115,55 @@ def plot_loss_comparison_across_ranks(lora_data, rsvd_data):
     ax1.grid(True, alpha=0.3)
     ax1.legend(fontsize=9, ncol=2)
     
-    # Validation Loss
-    for rank in RANKS:
-        if rank in lora_data and lora_data[rank] and 'loss' in lora_data[rank]:
-            df = lora_data[rank]['loss']
-            if df['eval_loss'].notna().any():
-                ax2.plot(df['epoch'], df['eval_loss'], marker='o', 
-                        label=f'LoRA r{rank}', linewidth=2, alpha=0.8)
-        
-        if rank in rsvd_data and rsvd_data[rank] and 'loss' in rsvd_data[rank]:
-            df = rsvd_data[rank]['loss']
-            if df['eval_loss'].notna().any():
-                ax2.plot(df['epoch'], df['eval_loss'], marker='s', 
-                        label=f'rSVD r{rank}', linewidth=2, alpha=0.8, linestyle='--')
-    
-    ax2.set_xlabel('Epoch', fontsize=12)
-    ax2.set_ylabel('Validation Loss', fontsize=12)
-    ax2.set_title('Validation Loss: LoRA vs rSVD Across Ranks', fontsize=14, fontweight='bold')
-    ax2.grid(True, alpha=0.3)
-    ax2.legend(fontsize=9, ncol=2)
-    
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "loss_comparison_across_ranks.png"), dpi=300)
     plt.close()
     print("✓ Saved loss_comparison_across_ranks.png")
+
+
+def plot_loss_comparison_across_ranks_weight_reduction(lora_data, rsvd_weight_reduction_data):
+    """Plot training loss comparison across ranks: LoRA vs rSVD Weight Reduction."""
+    fig, ax1 = plt.subplots(1, 1, figsize=(10, 6))
+
+    # Training Loss
+    for rank in RANKS:
+        if rank in lora_data and lora_data[rank] and 'loss' in lora_data[rank]:
+            df = lora_data[rank]['loss']
+            ax1.plot(
+                df['epoch'],
+                df['train_loss'],
+                marker='o',
+                label=f'LoRA r{rank}',
+                linewidth=2,
+                alpha=0.8,
+            )
+
+        if (
+            rank in rsvd_weight_reduction_data
+            and rsvd_weight_reduction_data[rank]
+            and 'loss' in rsvd_weight_reduction_data[rank]
+        ):
+            df = rsvd_weight_reduction_data[rank]['loss']
+            ax1.plot(
+                df['epoch'],
+                df['train_loss'],
+                marker='D',
+                label=f'rSVD WR r{rank}',
+                linewidth=2,
+                alpha=0.8,
+                linestyle='--',
+            )
+
+    ax1.set_xlabel('Epoch', fontsize=12)
+    ax1.set_ylabel('Training Loss', fontsize=12)
+    ax1.set_title('Training Loss: LoRA vs rSVD Weight Reduction Across Ranks', fontsize=14, fontweight='bold')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(fontsize=9, ncol=2)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, "loss_comparison_across_ranks_weight_reduction.png"), dpi=300)
+    plt.close()
+    print("✓ Saved loss_comparison_across_ranks_weight_reduction.png")
 
 
 def plot_final_loss_vs_rank(lora_data, rsvd_data):
@@ -206,21 +233,25 @@ def plot_final_loss_vs_rank(lora_data, rsvd_data):
     print("✓ Saved final_loss_vs_rank.png")
 
 
-def plot_memory_vs_rank(lora_data, rsvd_data):
+def plot_memory_vs_rank(lora_data, rsvd_data, rsvd_weight_reduction_data=None):
     """Plot peak memory and total memory vs rank as bar graphs."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     
     lora_peak_mem = []
     rsvd_peak_mem = []
+    rsvd_wr_peak_mem = []
     lora_total_mem = []
     rsvd_total_mem = []
+    rsvd_wr_total_mem = []
     available_ranks = []
     
     for rank in RANKS:
         lora_peak = None
         rsvd_peak = None
+        rsvd_wr_peak = None
         lora_total = None
         rsvd_total = None
+        rsvd_wr_total = None
         
         if rank in lora_data and lora_data[rank]:
             if 'peak_memory' in lora_data[rank]:
@@ -239,26 +270,39 @@ def plot_memory_vs_rank(lora_data, rsvd_data):
                 total = df.loc[df['metric'] == 'program_total_peak_memory', 'value_bytes'].values
                 if len(total) > 0:
                     rsvd_total = total[0] / 1e9
+
+        if rsvd_weight_reduction_data and rank in rsvd_weight_reduction_data and rsvd_weight_reduction_data[rank]:
+            if 'peak_memory' in rsvd_weight_reduction_data[rank]:
+                rsvd_wr_peak = rsvd_weight_reduction_data[rank]['peak_memory']['peak_memory_bytes'].max() / 1e9
+            if 'total_memory' in rsvd_weight_reduction_data[rank]:
+                df = rsvd_weight_reduction_data[rank]['total_memory']
+                total = df.loc[df['metric'] == 'program_total_peak_memory', 'value_bytes'].values
+                if len(total) > 0:
+                    rsvd_wr_total = total[0] / 1e9
         
-        if lora_peak is not None or rsvd_peak is not None:
+        if lora_peak is not None or rsvd_peak is not None or rsvd_wr_peak is not None:
             available_ranks.append(rank)
             lora_peak_mem.append(lora_peak if lora_peak is not None else np.nan)
             rsvd_peak_mem.append(rsvd_peak if rsvd_peak is not None else np.nan)
+            rsvd_wr_peak_mem.append(rsvd_wr_peak if rsvd_wr_peak is not None else np.nan)
             lora_total_mem.append(lora_total if lora_total is not None else np.nan)
             rsvd_total_mem.append(rsvd_total if rsvd_total is not None else np.nan)
+            rsvd_wr_total_mem.append(rsvd_wr_total if rsvd_wr_total is not None else np.nan)
     
     # Peak Memory - Bar Chart
     if available_ranks:
         x = np.arange(len(available_ranks))
-        width = 0.35
+        width = 0.25
         
-        bars1 = ax1.bar(x - width/2, lora_peak_mem, width, label='LoRA', 
+        bars1 = ax1.bar(x - width, lora_peak_mem, width, label='LoRA',
                         color='#ff7f0e', alpha=0.8)
-        bars2 = ax1.bar(x + width/2, rsvd_peak_mem, width, label='rSVD', 
+        bars2 = ax1.bar(x, rsvd_peak_mem, width, label='rSVD Optimizer',
                         color='#2ca02c', alpha=0.8)
+        bars3 = ax1.bar(x + width, rsvd_wr_peak_mem, width, label='rSVD Weight Reduction',
+                        color='#1f77b4', alpha=0.8)
         
         # Add value labels on bars
-        for bars in [bars1, bars2]:
+        for bars in [bars1, bars2, bars3]:
             for bar in bars:
                 height = bar.get_height()
                 if not np.isnan(height):
@@ -276,15 +320,17 @@ def plot_memory_vs_rank(lora_data, rsvd_data):
     # Total Memory - Bar Chart
     if available_ranks:
         x = np.arange(len(available_ranks))
-        width = 0.35
+        width = 0.25
         
-        bars1 = ax2.bar(x - width/2, lora_total_mem, width, label='LoRA', 
+        bars1 = ax2.bar(x - width, lora_total_mem, width, label='LoRA',
                         color='#ff7f0e', alpha=0.8)
-        bars2 = ax2.bar(x + width/2, rsvd_total_mem, width, label='rSVD', 
+        bars2 = ax2.bar(x, rsvd_total_mem, width, label='rSVD Optimizer',
                         color='#2ca02c', alpha=0.8)
+        bars3 = ax2.bar(x + width, rsvd_wr_total_mem, width, label='rSVD Weight Reduction',
+                        color='#1f77b4', alpha=0.8)
         
         # Add value labels on bars
-        for bars in [bars1, bars2]:
+        for bars in [bars1, bars2, bars3]:
             for bar in bars:
                 height = bar.get_height()
                 if not np.isnan(height):
@@ -522,11 +568,18 @@ def main():
     print("Loading data...")
     lora_data = {}
     rsvd_data = {}
+    rsvd_weight_reduction_data = {}
     rsvd_svt_data = {}
     
     for rank in RANKS:
         lora_data[rank] = load_data(LORA_BASE_PATH, rank, "LoRA")
         rsvd_data[rank] = load_data(RSVD_BASE_PATH, rank, "rSVD")
+        if os.path.exists(RSVD_WEIGHT_REDUCTION_BASE_PATH):
+            rsvd_weight_reduction_data[rank] = load_data(
+                RSVD_WEIGHT_REDUCTION_BASE_PATH, rank, "rSVD Weight Reduction"
+            )
+        else:
+            rsvd_weight_reduction_data[rank] = None
         
         # Try to load rSVD SVT data if path exists
         if os.path.exists(RSVD_SVT_BASE_PATH):
@@ -538,16 +591,19 @@ def main():
             print(f"  ✓ Loaded LoRA r{rank}")
         if rsvd_data[rank]:
             print(f"  ✓ Loaded rSVD r{rank}")
+        if rsvd_weight_reduction_data[rank]:
+            print(f"  ✓ Loaded rSVD Weight Reduction r{rank}")
         if rsvd_svt_data[rank]:
             print(f"  ✓ Loaded rSVD SVT r{rank}")
-    
+
     print("\nGenerating comparison plots...")
     print("-" * 80)
     
     # Generate all plots
     plot_loss_comparison_across_ranks(lora_data, rsvd_data)
+    plot_loss_comparison_across_ranks_weight_reduction(lora_data, rsvd_weight_reduction_data)
     plot_final_loss_vs_rank(lora_data, rsvd_data)
-    plot_memory_vs_rank(lora_data, rsvd_data)
+    plot_memory_vs_rank(lora_data, rsvd_data, rsvd_weight_reduction_data)
     plot_flops_vs_rank(lora_data, rsvd_data, rsvd_svt_data if any(rsvd_svt_data.values()) else None)
     plot_summary_by_rank(lora_data, rsvd_data)
     
@@ -556,6 +612,7 @@ def main():
     print("=" * 80)
     print(f"\nPlots saved to: {OUTPUT_DIR}/")
     print("  - loss_comparison_across_ranks.png")
+    print("  - loss_comparison_across_ranks_weight_reduction.png")
     print("  - final_loss_vs_rank.png")
     print("  - memory_vs_rank.png")
     print("  - flops_comparison_lora_rsvd.png")
