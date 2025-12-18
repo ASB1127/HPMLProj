@@ -1,0 +1,28 @@
+# HPML Project: Efficient Fine-Tuning Requirements
+# Compatible with all approaches: LoRA, rSVD, and variants
+
+# Core dependencies
+torch>=2.0.0
+transformers>=4.30.0
+datasets>=2.12.0
+numpy>=1.24.0,<2.0.0
+tqdm>=4.65.0
+
+# LoRA and parameter-efficient fine-tuning
+peft>=0.5.0
+
+# Training and evaluation utilities
+accelerate>=0.26.0
+evaluate
+
+# Visualization and data analysis
+matplotlib>=3.5.0
+pandas>=1.5.0
+seaborn>=0.12.0
+
+# Additional utilities (for MNIST experiments in custom_adam)
+torchvision>=0.15.0
+
+# Optional: For profiling and debugging
+psutil>=5.9.0
+
