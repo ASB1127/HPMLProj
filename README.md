@@ -210,7 +210,6 @@ cat epoch_peak_memory.csv
 ### Project Structure
 ```
 HPMLProj/
-├── Full_Dense/              # Baseline full fine-tuning
 ├── Lora/                    # LoRA implementation
 │   └── graph/              # Results and plots
 ├── Lora+TopR/              # LoRA + TopR combination
