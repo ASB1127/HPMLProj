@@ -211,15 +211,30 @@ cat epoch_peak_memory.csv
 ```
 HPMLProj/
 ├── Lora/                    # LoRA implementation
-│   └── graph/              # Results and plots
+│   ├── lora_config/        # LoRA configuration
+│   ├── forward_pass/       # Forward pass profiling
+│   └── graph/              # Results and plots (sst2, imdb subdirs)
 ├── Lora+TopR/              # LoRA + TopR combination
+│   └── graph/              # Results and plots
 ├── rSVD/                   # Core rSVD implementation
-│   ├── graph/              # Results, plots, and metrics
-│   └── requirements.txt
+│   ├── rsvd_config/        # rSVD configuration
+│   ├── optimizer/          # rSVD optimizer
+│   ├── forward_pass/       # Forward pass profiling
+│   └── graph/              # Results, plots, and metrics
 ├── rSVD_SVT_Fixed_Rank/    # rSVD with fixed-rank SVT
+│   ├── rsvd_svt_config/    # SVT configuration
+│   ├── sst/graph/          # SST-2 results
+│   └── imdbb/graph/        # IMDB results
 ├── rSVD_SVT_Rank_Fractions/ # rSVD with adaptive rank SVT
+│   ├── rsvd_svt_config/    # SVT configuration
+│   ├── sst/graph/          # SST-2 results
+│   └── imdbb/graph/        # IMDB results
 ├── rSVD_Weight_Reduction/   # rSVD with weight compression
+│   ├── rSVD_HF_config/     # Hugging Face config
+│   └── graph/              # Results and plots
 ├── rSVD_Weight_Reduction_SVT/ # Combined approach
+│   ├── rSVD_HF_config/     # Hugging Face config
+│   └── graph/              # Results and plots
 ├── custom_adam/            # Custom optimizer implementations
 └── docker/                 # Docker configuration
 ```
