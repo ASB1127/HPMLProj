@@ -88,24 +88,24 @@ The goal is to achieve competitive accuracy on text classification benchmarks wh
 
 ### A. Requirements
 
-The project uses different requirements for different approaches. Install the base dependencies:
+Install all dependencies from the root-level `requirements.txt`:
 
 ```bash
-# For rSVD variants
-cd rSVD
-pip install -r requirements.txt
-
-# Or for SVT variants
-cd rSVD_SVT_Fixed_Rank
 pip install -r requirements.txt
 ```
 
 **Core Dependencies**:
-- `torch>=2.0.0`
-- `transformers>=4.30.0`
-- `datasets>=2.12.0`
-- `numpy>=1.24.0,<2.0.0`
-- `tqdm>=4.65.0`
+- `torch>=2.0.0` - PyTorch for deep learning
+- `transformers>=4.30.0` - Hugging Face Transformers (includes Trainer API)
+- `datasets>=2.12.0` - Hugging Face Datasets
+- `peft>=0.5.0` - Parameter-Efficient Fine-Tuning (for LoRA)
+- `accelerate>=0.26.0` - Training acceleration utilities
+- `evaluate` - Model evaluation metrics
+- `numpy>=1.24.0,<2.0.0` - Numerical computing
+- `tqdm>=4.65.0` - Progress bars
+- `matplotlib>=3.5.0`, `pandas>=1.5.0`, `seaborn>=0.12.0` - Visualization
+- `torchvision>=0.15.0` - For MNIST experiments
+- `psutil>=5.9.0` - System profiling
 
 ---
 
