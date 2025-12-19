@@ -189,7 +189,7 @@ pip install -r requirements.txt
 # No manual download needed
 
 # Step 3: Run training
-python rsvd_call.py
+python rsvd_call_16.py
 
 # Step 4: View results
 cd graph/r16
