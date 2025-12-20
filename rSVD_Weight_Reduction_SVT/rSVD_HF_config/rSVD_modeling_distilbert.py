@@ -1,3 +1,8 @@
+"""
+Custom DistilBERT modeling with rSVD and Singular Value Truncation (SVT).
+This module extends the rSVD approach by adding Singular Value Truncation
+logic to further reduce the rank of the decomposed layers during training.
+"""
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
@@ -53,6 +58,10 @@ def apply_rsvd_to_attention_qkv(model, rank):
 
 @torch.no_grad()
 def svd_truncate_factors_(A: torch.Tensor, B: torch.Tensor, C: torch.Tensor, k: int):
+    """
+    Truncates the factors A, B, and C to rank k using SVD.
+    This effectively reduces the dimensionality of the decomposed layers.
+    """
      r = A.shape[1]
      if k >= r:
         return A, C, B

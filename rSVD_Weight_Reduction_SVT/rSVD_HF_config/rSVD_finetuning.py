@@ -1,3 +1,8 @@
+"""
+Fine-tuning module for DistilBERT with weight reduction using rSVD and SVT.
+Includes SingularValueTruncationCallback to periodically truncate singular values
+during the training process.
+"""
 from re import A
 from transformers import TrainerCallback
 import sys, os
@@ -97,6 +102,10 @@ class LossPerEpochCallback(TrainerCallback):
 
 
 class SingularValueTruncationCallback(TrainerCallback):
+    """
+    Trainer callback that applies Singular Value Truncation to rSVDLinear layers
+    at the end of each epoch or every N steps.
+    """
     def __init__(self, keep_rank: int, every_n_steps: int = 50):
         self.keep_rank = keep_rank
         self.every_n_steps = every_n_steps
@@ -141,6 +150,9 @@ class SingularValueTruncationCallback(TrainerCallback):
 
 
 class rSVD_run():
+    """
+    Main runner class for weight reduction experiments using rSVD and SVT.
+    """
     
     def __init__(self, num_train_epochs, rank, learning_rate, dataset_name):
         self.num_train_epochs = num_train_epochs

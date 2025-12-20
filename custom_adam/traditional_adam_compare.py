@@ -1,3 +1,7 @@
+"""
+Comparison script between custom Adam implementation and PyTorch's native Adam.
+Evaluates training loss and final accuracy on the MNIST dataset using an MLP.
+"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

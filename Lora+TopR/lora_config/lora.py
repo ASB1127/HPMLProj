@@ -1,3 +1,8 @@
+"""
+LoRA fine-tuning with Top-R gradient masking.
+This module extends LoRA by using a custom TopRAdamW optimizer that 
+periodically masks out gradients with small magnitudes.
+"""
 from re import A
 from transformers import TrainerCallback
 import sys, os

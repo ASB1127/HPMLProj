@@ -1,3 +1,8 @@
+"""
+Entry point for rSVD weight reduction fine-tuning experiments.
+Runs experiments across multiple ranks and datasets to evaluate the
+effectiveness of rSVD decomposition in the HF Transformers framework.
+"""
 from rSVD_HF_config.rSVD_finetuning import rSVD_run
 from forward_pass_config.profile_forward import profiler_forward
 

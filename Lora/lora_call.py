@@ -1,3 +1,8 @@
+"""
+Entry point for running LoRA (Low-Rank Adaptation) fine-tuning experiments.
+Iterates through different dataset and rank configurations, performing both
+model training and memory/FLOPs profiling.
+"""
 from lora_config.lora import lora_run, MemoryPeakPerEpochCallback
 from forward_pass.profile_forward import profiler_forward as profile_forward
 

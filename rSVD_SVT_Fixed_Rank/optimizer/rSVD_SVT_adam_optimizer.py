@@ -1,3 +1,8 @@
+"""
+Randomized SVD with Singular Value Thresholding (rSVDSVT) Adam optimizer.
+Combines rSVD projection with periodic singular value thresholding for 
+further parameter efficiency and memory savings.
+"""
 import math
 import torch
 from torch.optim.optimizer import Optimizer

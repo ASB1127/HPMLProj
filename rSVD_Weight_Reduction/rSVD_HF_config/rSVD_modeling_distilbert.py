@@ -1,3 +1,8 @@
+"""
+Custom DistilBERT modeling with Randomized SVD (rSVD) for attention layers.
+This module defines rSVDLinear, which decomposes a linear layer's weights
+using rSVD to reduce parameter count and computational complexity.
+"""
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
@@ -5,6 +10,10 @@ from transformers import DistilBertForSequenceClassification
 
 
 class rSVDLinear(nn.Module):
+    """
+    Linear layer decomposed using Randomized SVD.
+    Approximates weight matrix W as (A * C) @ B, where A is U_r, C is diagonal S_r, and B is V_r.
+    """
     def __init__(self, linear, rank):
         super().__init__()
         assert isinstance(linear, nn.Linear)
@@ -44,6 +53,7 @@ class rSVDLinear(nn.Module):
         return F.linear(x, W_approx, self.bias)
 
 def apply_rsvd_to_attention_qkv(model, rank):
+    """Replaces attention Q, K, V linear layers with rSVDLinear equivalents."""
         for layer in model.distilbert.transformer.layer:
             attn = layer.attention
             attn.q_lin = rSVDLinear(attn.q_lin, rank)
@@ -51,6 +61,10 @@ def apply_rsvd_to_attention_qkv(model, rank):
             attn.v_lin = rSVDLinear(attn.v_lin, rank)
         return model
 class DistilBertForSequenceClassification_rSVD(DistilBertForSequenceClassification):
+    """
+    DistilBERT model for sequence classification that supports rSVD-decomposed
+    attention layers.
+    """
     def __init__(self, config):
         super().__init__(config)
 

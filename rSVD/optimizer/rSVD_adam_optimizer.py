@@ -1,3 +1,8 @@
+"""
+Randomized SVD (rSVD) Adam optimizer.
+This optimizer projects gradients to a low-rank subspace to reduce memory 
+requirements for maintaining Adam moments, especially for large weight matrices.
+"""
 import math
 import torch
 from torch.optim.optimizer import Optimizer

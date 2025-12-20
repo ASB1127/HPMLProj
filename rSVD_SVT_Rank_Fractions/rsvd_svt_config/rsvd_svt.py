@@ -1,3 +1,8 @@
+"""
+Configuration and runner for rSVD with Singular Value Thresholding (SVT) using rank fractions.
+This module uses the rSVDSVTAdam optimizer to perform low-rank adaptation
+where the rank is specified as a fraction of the matrix dimensions.
+"""
 import sys
 import os
 import numpy as np
@@ -17,6 +22,7 @@ def _get_rank_dir(rank_fraction, base_path="./graph"):
     return base_path + f"/r{rank_fraction}".replace(".", "_")
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
+    """Callback to log peak CUDA memory usage per epoch."""
     def __init__(self, rank_fraction, base_path="./graph"):
         self.rank_fraction = rank_fraction
         self.base_path = base_path
@@ -39,6 +45,7 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
                 f.write(f"{int(state.epoch)},{peak}\n")
 
 class LossPerEpochCallback(TrainerCallback):
+    """Callback to log training and evaluation loss per epoch."""
     def __init__(self, rank_fraction, base_path="./graph"):
         self.rank_fraction = rank_fraction
         self.base_path = base_path
@@ -66,6 +73,7 @@ class LossPerEpochCallback(TrainerCallback):
 
 
 class RsvdsvtTrainer(Trainer):
+    """Custom Trainer subclass that integrates the rSVDSVTAdam optimizer."""
     """Custom Trainer that uses rSVDSVTAdam."""
     
     def __init__(self, rank_fraction, proj_interval, use_rgp, *args, **kwargs):
@@ -91,6 +99,7 @@ class RsvdsvtTrainer(Trainer):
 
 
 class rsvd_svt_run():
+    """Main runner class for rSVD experiments with rank-fraction SVT."""
     
     def __init__(self, num_train_epochs, rank_fraction, learning_rate, dataset="sst", 
                  proj_interval=500, use_rgp=True, gradient_accumulation_steps=4,

@@ -1,3 +1,8 @@
+"""
+Test script for rSVD-based weight compression of a multi-layer perceptron (MLP).
+Periodic rSVD compression is applied to the Linear layers during the training
+process on MNIST.
+"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

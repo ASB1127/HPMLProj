@@ -2,6 +2,10 @@ import torch
 from torch.optim import AdamW
 
 class TopRAdamW(AdamW):
+    """
+    AdamW optimizer with Top-R gradient masking.
+    Only the top-R fraction of the gradient magnitudes are kept for each parameter.
+    """
     def __init__(self, params, lr=1e-3, top_r=1.0, **kwargs):
         super().__init__(params, lr=lr, **kwargs)
         assert 0 < top_r <= 1.0 

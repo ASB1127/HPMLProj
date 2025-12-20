@@ -1,3 +1,8 @@
+"""
+Multi-rank plotting script for rSVD SVT Fixed Rank experiments.
+Aggregates metrics from multiple rank directories and generates comparison 
+plots for loss, memory, and compute cost.
+"""
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
@@ -15,6 +20,7 @@ os.makedirs(BASE + "/plots", exist_ok=True)
 
 # Helper function to convert rank to directory name
 def rank_to_dir(rf):
+    """Converts a rank value to its corresponding directory name."""
     """Convert rank (float) to directory name (e.g., 0.3 -> r0_3)"""
     return f"r{rf}"
 

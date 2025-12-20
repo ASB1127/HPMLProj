@@ -29,6 +29,7 @@ MemorySource = Literal["auto", "total_program", "epoch_peak"]
 
 
 def _require_matplotlib() -> None:
+    """Ensures that matplotlib is installed before attempting to plot."""
     try:
         import matplotlib  # noqa: F401
     except ModuleNotFoundError as exc:
@@ -40,6 +41,7 @@ def _require_matplotlib() -> None:
 
 
 def _bytes_to_gib(num_bytes: float) -> float:
+    """Converts a value in bytes to Gibibytes (GiB)."""
     return num_bytes / (1024.0**3)
 
 
@@ -48,12 +50,14 @@ def _is_finite_number(value: float) -> bool:
 
 
 def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    """Reads all rows from a CSV file into a list of dictionaries."""
     with path.open("r", newline="") as f:
         reader = csv.DictReader(f)
         return [row for row in reader]
 
 
 def _parse_rank_dirname(name: str) -> int | None:
+    """Parses a rank integer from a directory name following the 'r{rank}' format."""
     match = re.fullmatch(r"r(\d+)", name)
     if not match:
         return None
@@ -61,6 +65,7 @@ def _parse_rank_dirname(name: str) -> int | None:
 
 
 def discover_ranks(dataset_dir: Path) -> list[int]:
+    """Scans a dataset directory to find all available rank subdirectories."""
     ranks: list[int] = []
     for child in dataset_dir.iterdir():
         if not child.is_dir():
@@ -72,6 +77,7 @@ def discover_ranks(dataset_dir: Path) -> list[int]:
 
 
 def read_total_program_peak_bytes(rank_dir: Path) -> float | None:
+    """Reads total program peak memory usage in bytes from the dedicated CSV file."""
     path = rank_dir / "total_program_memory.csv"
     if not path.exists():
         return None
@@ -90,6 +96,7 @@ def read_total_program_peak_bytes(rank_dir: Path) -> float | None:
 
 
 def read_epoch_peak_bytes(rank_dir: Path) -> float | None:
+    """Calculates the maximum peak memory usage across all epochs from the peak memory CSV."""
     path = rank_dir / "epoch_peak_memory.csv"
     if not path.exists():
         return None
@@ -109,6 +116,7 @@ def read_epoch_peak_bytes(rank_dir: Path) -> float | None:
 
 
 def read_train_loss_curve(rank_dir: Path) -> tuple[list[int], list[float]]:
+    """Reads the training loss vs epoch data for a specific rank."""
     path = rank_dir / "epoch_loss.csv"
     if not path.exists():
         raise FileNotFoundError(path)
@@ -138,6 +146,7 @@ def read_train_loss_curve(rank_dir: Path) -> tuple[list[int], list[float]]:
 
 @dataclass(frozen=True)
 class RankMemory:
+    """Container for peak memory data associated with a specific rank and its data source."""
     rank: int
     peak_bytes: float
     source: str
@@ -146,6 +155,7 @@ class RankMemory:
 def collect_peak_memory(
     dataset_dir: Path, ranks: Iterable[int], source: MemorySource
 ) -> list[RankMemory]:
+    """Collects peak memory usage data for a set of ranks from specified or auto-discovered sources."""
     results: list[RankMemory] = []
     for rank in ranks:
         rank_dir = dataset_dir / f"r{rank}"
@@ -178,6 +188,7 @@ def collect_peak_memory(
 
 
 def write_memory_summary_csv(rows: list[RankMemory], out_path: Path) -> None:
+    """Writes a summary of peak memory across ranks to a CSV file."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", newline="") as f:
         writer = csv.writer(f)
@@ -189,6 +200,7 @@ def write_memory_summary_csv(rows: list[RankMemory], out_path: Path) -> None:
 
 
 def plot_peak_memory_bar(rows: list[RankMemory], out_path: Path) -> None:
+    """Generates a bar chart comparing peak memory usage across different ranks."""
     _require_matplotlib()
     import matplotlib.pyplot as plt
 
@@ -239,6 +251,7 @@ def plot_peak_memory_bar(rows: list[RankMemory], out_path: Path) -> None:
 
 
 def plot_train_loss_curves(dataset_dir: Path, ranks: Iterable[int], out_path: Path) -> None:
+    """Generates a line chart plotting training loss curves for multiple ranks."""
     _require_matplotlib()
     import matplotlib.pyplot as plt
 

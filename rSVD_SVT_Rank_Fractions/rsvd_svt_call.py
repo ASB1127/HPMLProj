@@ -1,3 +1,8 @@
+"""
+Entry point for rSVD SVT (Rank Fractions) fine-tuning experiments.
+Coordinates the execution of training runs using different rank fractions,
+leveraging the rSVDSVTAdam optimizer for parameter efficiency.
+"""
 from rsvd_svt_config.rsvd_svt import rsvd_svt_run
 from forward_pass.profile_forward import profiler_forward as profile_forward
 

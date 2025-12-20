@@ -1,3 +1,8 @@
+"""
+Entry point for running Randomized SVD (rSVD) fine-tuning experiments.
+Cycles through different rank configurations to evaluate the trade-off
+between model performance and memory efficiency using the rSVDAdam optimizer.
+"""
 from rsvd_config.rsvd import rsvd_run
 from forward_pass.profile_forward import profiler_forward as profile_forward
 

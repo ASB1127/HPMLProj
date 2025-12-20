@@ -1,3 +1,8 @@
+"""
+Fine-tuning module for DistilBERT with weight reduction using rSVD.
+Handles dataset processing, model initialization with rSVD linear layers,
+training, and uploading the resulting model to the Hugging Face Hub.
+"""
 from re import A
 from transformers import TrainerCallback
 import sys, os
@@ -36,6 +41,7 @@ from .rSVD_modeling_distilbert import (
 
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
+    """Callback to track peak CUDA memory usage per epoch."""
     def __init__(self, rank, dataset_name, base_path="./graph"):
         self.rank = rank
         self.path = f"{base_path}/{dataset_name}/r{rank}"
@@ -61,6 +67,7 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
                 f.write(f"{int(state.epoch)},{peak}\n")
 
 class LossPerEpochCallback(TrainerCallback):
+    """Callback to log training and evaluation loss per epoch."""
     def __init__(self,rank, dataset_name,base_path="./graph"):
         self.rank = rank
         self.path = f"{base_path}/{dataset_name}/r{rank}"
@@ -100,6 +107,9 @@ class LossPerEpochCallback(TrainerCallback):
 
 
 class rSVD_run():
+    """
+    Main runner class for weight reduction experiments using rSVD.
+    """
     
     def __init__(self, num_train_epochs, rank, learning_rate, dataset_name):
         self.num_train_epochs = num_train_epochs
@@ -111,11 +121,13 @@ class rSVD_run():
         
     
     def compute_metrics(self,eval_pred):
+        """Computes accuracy for evaluation."""
             logits, labels = eval_pred
             preds = np.argmax(logits, axis=-1)
             return self.accuracy_metric.compute(predictions=preds, references=labels)
         
     def tokenize_fn(self,examples):
+        """Tokenizes inputs based on dataset (SST-2 or IMDB)."""
         if self.dataset_name == "sst2":
             text_field = "sentence"
         elif self.dataset_name == "imdb":
@@ -126,6 +138,11 @@ class rSVD_run():
 
         
     def run(self):
+        """
+        Executes the weight reduction fine-tuning process.
+        This includes loading datasets, initializing the rSVD-modified model,
+        training with AdamW on specific trainable parameters, and model card generation.
+        """
         total_flops_step = None
         flops_per_epoch = None
         total_peak = None

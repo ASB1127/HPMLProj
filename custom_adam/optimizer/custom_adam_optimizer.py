@@ -1,3 +1,8 @@
+"""
+Custom Adam optimizer implementation from scratch.
+This module provides a pure-PyTorch implementation of the Adam and AdamW
+optimizers, supporting decoupled weight decay and AMSGrad.
+"""
 import math
 import torch
 from torch.optim.optimizer import Optimizer

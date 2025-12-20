@@ -1,13 +1,8 @@
 """
 Consolidated plotting script for rSVD experiments.
-
-This script generates all plots for rSVD experiments, including:
-- Multi-rank comparisons (loss, memory, FLOPs)
-- Memory breakdown analysis
-- Optimizer memory comparisons
-- LoRA vs rSVD comparisons
-
-Run this script from the graph/ directory.
+This script generates a comprehensive suite of visualizations including multi-rank 
+comparisons, memory breakdown analysis, optimizer memory savings, and 
+LoRA vs rSVD performance benchmarks.
 """
 import pandas as pd
 import matplotlib.pyplot as plt

@@ -1,3 +1,8 @@
+"""
+Randomized SVD (rSVD) fine-tuning configuration and runner.
+This module provides classes for fine-tuning models using the rSVDAdam optimizer,
+tracking memory usage, loss, and accuracy on training subsets.
+"""
 import sys
 import os
 import numpy as np
@@ -39,6 +44,10 @@ def _rank_to_rank_fraction(rank, typical_dim=768):
 
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
+    """
+    Trainer callback to track and log peak CUDA memory usage at the start and end of each epoch.
+    Stats are saved to a CSV file in the rank-specific results directory.
+    """
     def __init__(self, rank, base_path="./graph"):
         self.rank = rank
         self.base_path = base_path
@@ -62,6 +71,10 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
 
 
 class LossPerEpochCallback(TrainerCallback):
+    """
+    Trainer callback to log training and evaluation loss at the end of each epoch.
+    Stats are saved to a CSV file in the rank-specific results directory.
+    """
     def __init__(self, rank, base_path="./graph"):
         self.rank = rank
         self.base_path = base_path
@@ -183,6 +196,9 @@ class AccuracyOnTrainSubsetCallback(TrainerCallback):
 
 
 class RsvdTrainer(Trainer):
+    """
+    Custom Hugging Face Trainer that initializes the rSVDAdam optimizer.
+    """
     """Custom Trainer that uses rSVDAdam."""
     
     def __init__(self, rank, proj_interval, use_rgp, typical_dim=768, *args, **kwargs):
@@ -193,6 +209,7 @@ class RsvdTrainer(Trainer):
         super().__init__(*args, **kwargs)
 
     def create_optimizer_and_scheduler(self, num_training_steps: int):
+        """Initializes the rSVDAdam optimizer and a dummy scheduler."""
         if self.optimizer is None:
             self.optimizer = rSVDAdam(
                 self.model.parameters(),
@@ -209,6 +226,11 @@ class RsvdTrainer(Trainer):
 
 
 class rsvd_run():
+    """
+    Main runner class for rSVD fine-tuning experiments.
+    Handles dataset loading, model initialization, training with rSVDAdam,
+    and performance profiling.
+    """
     
     def __init__(self, num_train_epochs, rank, learning_rate, dataset="sst", 
                  proj_interval=500, use_rgp=True, gradient_accumulation_steps=4,
@@ -263,12 +285,14 @@ class rsvd_run():
             raise ValueError(f"Unknown dataset: {self.dataset}. Choose 'imdb' or 'sst'")
     
     def compute_metrics(self, eval_pred):
+        """Computes accuracy for model evaluation."""
         logits, labels = eval_pred
         preds = np.argmax(logits, axis=-1)
         accuracy = (preds == labels).astype(np.float32).mean().item()
         return {"accuracy": accuracy}
     
     def tokenize_fn(self, examples):
+        """Tokenizes the input text based on the selected dataset configuration."""
         return self.tokenizer(
             examples[self.dataset_config['text_column']],
             truncation=True,
@@ -277,6 +301,15 @@ class rsvd_run():
         )
     
     def run(self):
+        """
+        Executes the full rSVD fine-tuning workflow:
+        1. Setup device and load dataset.
+        2. Tokenize data and initialize callbacks.
+        3. Load base model and transition to device.
+        4. Configure and run the RsvdTrainer.
+        5. Profile FLOPs (if CUDA is available).
+        6. Save the fine-tuned model.
+        """
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
 

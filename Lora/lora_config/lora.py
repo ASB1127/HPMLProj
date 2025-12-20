@@ -1,3 +1,9 @@
+"""
+LoRA (Low-Rank Adaptation) fine-tuning configuration and runner.
+This module provides classes and utilities for fine-tuning DistilBERT model using LoRA
+on datasets like SST2 and IMDB. It includes callbacks for tracking peak memory
+and loss during the training process.
+"""
 from re import A
 from transformers import TrainerCallback
 import sys, os
@@ -30,6 +36,10 @@ import torch
 
 
 class MemoryPeakPerEpochCallback(TrainerCallback):
+    """
+    Trainer callback to track and log peak CUDA memory usage at the start and end of each epoch.
+    Stats are saved to a CSV file in the rank-specific results directory.
+    """
     def __init__(self, rank, dataset_name, base_path="./graph"):
         self.rank = rank
         self.dataset_name = dataset_name
@@ -56,6 +66,10 @@ class MemoryPeakPerEpochCallback(TrainerCallback):
                 f.write(f"{int(state.epoch)},{peak}\n")
 
 class LossPerEpochCallback(TrainerCallback):
+    """
+    Trainer callback to log training and evaluation loss at the end of each epoch.
+    Stats are saved to a CSV file in the rank-specific results directory.
+    """
     def __init__(self, rank, dataset_name, base_path="./graph"):
         self.rank = rank
         self.base_path = base_path
@@ -93,6 +107,11 @@ class LossPerEpochCallback(TrainerCallback):
 
 
 class lora_run():
+    """
+    Main runner class for LoRA fine-tuning experiments.
+    Handles dataset loading, model initialization with LoRA configuration,
+    training, evaluation, and saving/merging the results.
+    """
     
     def __init__(self, num_train_epochs, rank, learning_rate, dataset_name):    
         self.num_train_epochs = num_train_epochs
@@ -104,11 +123,13 @@ class lora_run():
         
     
     def compute_metrics(self,eval_pred):
+        """Computes accuracy for model evaluation."""
             logits, labels = eval_pred
             preds = np.argmax(logits, axis=-1)
             return self.accuracy_metric.compute(predictions=preds, references=labels)
 
     def tokenize_fn(self, examples):
+        """Tokenizes the input text based on the dataset (SST-2 or IMDB)."""
         if self.dataset_name == "sst2":
             text_field = "sentence"
         elif self.dataset_name == "imdb":
@@ -120,6 +141,15 @@ class lora_run():
     
         
     def run(self):
+        """
+        Executes the full LoRA fine-tuning workflow:
+        1. Setup logging and metrics.
+        2. Load and tokenize dataset.
+        3. Initialize model with LoRA configuration.
+        4. Train and evaluate.
+        5. Profile FLOPs (if CUDA is available).
+        6. Save and merge LoRA weights back into the base model.
+        """
     
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()

@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""
+Plotting script for rSVD Weight Reduction experiments with SVT.
+Generates visualizations comparing theoretical FLOPs and training loss 
+across different ranks and SVT truncation settings.
+"""
 from __future__ import annotations
 
 import argparse
@@ -11,18 +16,21 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 @dataclass(frozen=True)
 class FlopsStats:
+    """Dataclass to hold step-level and epoch-level FLOPs statistics."""
     step_flops: float
     epoch_flops: float
 
 
 @dataclass(frozen=True)
 class EpochLossRow:
+    """Dataclass to hold training and evaluation loss for a specific epoch."""
     epoch: int
     train_loss: float
     eval_loss: Optional[float]
 
 
 def _read_flops_stats(path: Path) -> FlopsStats:
+    """Reads FLOPs profiling statistics from a CSV file into a FlopsStats object."""
     metrics: Dict[str, float] = {}
     with path.open(newline="") as f:
         reader = csv.DictReader(f)
@@ -40,6 +48,7 @@ def _read_flops_stats(path: Path) -> FlopsStats:
 
 
 def _read_epoch_loss(path: Path) -> List[EpochLossRow]:
+    """Reads epoch-wise loss data from a CSV file into a list of EpochLossRow objects."""
     rows: List[EpochLossRow] = []
     with path.open(newline="") as f:
         reader = csv.DictReader(f)
@@ -62,6 +71,7 @@ def _read_epoch_loss(path: Path) -> List[EpochLossRow]:
 
 
 def _iter_rank_dirs(sst2_dir: Path) -> Iterable[Tuple[int, Path]]:
+    """Iterates through and parses rank directories (e.g., 'r4') within a dataset directory."""
     pattern = re.compile(r"^r(\d+)$")
     for child in sorted(sst2_dir.iterdir()):
         if not child.is_dir():
@@ -73,6 +83,7 @@ def _iter_rank_dirs(sst2_dir: Path) -> Iterable[Tuple[int, Path]]:
 
 
 def _safe_import_matplotlib():
+    """Import matplotlib.pyplot safely, providing a helpful error if missing."""
     try:
         import matplotlib.pyplot as plt  # type: ignore
     except Exception as e:  # pragma: no cover
@@ -84,10 +95,12 @@ def _safe_import_matplotlib():
 
 
 def _svt_keep_rank(start_rank: int) -> int:
+    """Calculates the rank to keep after SVT truncation (defaulting to half of the start rank)."""
     return max(1, start_rank // 2)
 
 
 def _steps_per_epoch_from_profiler(rank_to_flops: Dict[int, FlopsStats]) -> int:
+    """Infers the number of steps per epoch based on profiled FLOPs statistics."""
     rank = sorted(rank_to_flops.keys())[0]
     stats = rank_to_flops[rank]
     if stats.step_flops <= 0:
@@ -105,6 +118,7 @@ def _theoretical_rsvd_linear_flops_per_step(
     rank: int,
     tokens_per_step: int,
 ) -> int:
+    """Calculates the theoretical FLOPs for an rSVD factorized linear layer forward pass."""
     if rank <= 0:
         return 0
     # Efficient factorized compute for diagonal C:
@@ -127,6 +141,7 @@ def _plot_flops_saved_per_rank(
     projections_per_layer: int,
     hidden_size: int,
 ) -> List[Path]:
+    """Generates a bar chart showing theoretical FLOPs saved per rank removed by SVT."""
     plt = _safe_import_matplotlib()
 
     ranks = sorted(rank_to_flops.keys())
@@ -183,6 +198,7 @@ def _plot_flops_baseline_vs_svt(
     projections_per_layer: int,
     hidden_size: int,
 ) -> List[Path]:
+    """Generates a bar chart comparing baseline rSVD epoch FLOPs vs SVT theoretical FLOPs."""
     plt = _safe_import_matplotlib()
 
     ranks = sorted(rank_to_flops.keys())
@@ -241,6 +257,7 @@ def _plot_training_loss_vs_epoch(
     rank_to_loss: Dict[int, List[EpochLossRow]],
     out_dir: Path,
 ) -> List[Path]:
+    """Plots training loss vs epoch for multiple rSVD ranks."""
     plt = _safe_import_matplotlib()
 
     fig, ax = plt.subplots(figsize=(9, 4.5))

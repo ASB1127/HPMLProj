@@ -1,3 +1,8 @@
+"""
+Plotting script for LoRA fine-tuning experiments.
+Generates visualizations for training loss, peak memory usage, and FLOPs 
+across different ranks and datasets. Includes a 2x2 summary plot.
+"""
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -20,13 +25,16 @@ os.makedirs(PLOTS, exist_ok=True)
 # ============================================================
 
 def read_epoch_loss(rank):
+    """Reads the epoch loss CSV for a given rank."""
     return pd.read_csv(f"{ROOT}/{DATASET}/r{rank}/epoch_loss.csv")
 
 def read_peak_memory(rank):
+    """Reads the peak memory CSV for a given rank and returns the maximum in MB."""
     df = pd.read_csv(f"{ROOT}/{DATASET}/r{rank}/epoch_peak_memory.csv")
     return df["peak_memory_bytes"].max() / 1e6  # MB
 
 def read_step_flops(rank):
+    """Reads the FLOPs profile stats for a given rank and returns the step FLOPs value."""
     df = pd.read_csv(f"{ROOT}/{DATASET}/r{rank}/flops_profiler_stats.csv")
     return float(df[df["metric"] == "step_flops"]["value"].iloc[0])
 
@@ -35,6 +43,7 @@ def read_step_flops(rank):
 # ============================================================
 
 def plot_train_loss_vs_epoch():
+    """Plots training loss vs epoch for all configured ranks and saves it as an image."""
     plt.figure(figsize=(8, 5))
 
     for r in RANKS:
@@ -56,6 +65,7 @@ def plot_train_loss_vs_epoch():
 # ============================================================
 
 def plot_peak_memory_vs_rank():
+    """Plots peak GPU memory usage vs rank as a bar chart."""
     mems = [read_peak_memory(r) for r in RANKS]
 
     plt.figure(figsize=(7, 5))
@@ -75,6 +85,7 @@ def plot_peak_memory_vs_rank():
 # ============================================================
 
 def plot_step_flops_vs_rank():
+    """Plots measured step FLOPs vs rank on a log scale."""
     flops = [read_step_flops(r) for r in RANKS]
 
     plt.figure(figsize=(7, 5))
@@ -95,6 +106,13 @@ def plot_step_flops_vs_rank():
 # ============================================================
 
 def plot_lora_2x2():
+    """
+    Combines individual plots into a 2x2 summary mosaic showing:
+    - Training Loss vs Epoch
+    - Peak Memory vs Rank
+    - Descriptive text for LoRA baseline
+    - Step FLOPs vs Rank
+    """
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     img_loss  = plt.imread(f"{PLOTS}/train_loss_vs_epoch.png")

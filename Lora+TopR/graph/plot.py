@@ -33,6 +33,7 @@ TOPR_DIR_RE = re.compile(r"^topr(?P<topr>[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)$")
 
 @dataclass(frozen=True)
 class RunData:
+    """Dataclass to hold training and profiling data for a single LoRA+TopR run."""
     top_r: float
     dir_path: Path
     epoch_train_loss: List[Tuple[int, float]]
@@ -41,6 +42,7 @@ class RunData:
 
 
 def _try_float(value: str | None) -> Optional[float]:
+    """Attempts to convert a string value to a float, returning None on failure."""
     if value is None:
         return None
     value = str(value).strip()
@@ -53,6 +55,7 @@ def _try_float(value: str | None) -> Optional[float]:
 
 
 def _read_epoch_loss_csv(path: Path) -> Tuple[List[Tuple[int, float]], List[Tuple[int, float]]]:
+    """Reads epoch loss data from a CSV file, returning training and evaluation loss lists."""
     train: List[Tuple[int, float]] = []
     eval_: List[Tuple[int, float]] = []
     if not path.exists():
@@ -83,6 +86,7 @@ def _read_epoch_loss_csv(path: Path) -> Tuple[List[Tuple[int, float]], List[Tupl
 
 
 def _read_flops_stats(path: Path) -> Dict[str, float]:
+    """Reads FLOPs profiling statistics from a CSV file."""
     stats: Dict[str, float] = {}
     if not path.exists():
         return stats
@@ -98,6 +102,7 @@ def _read_flops_stats(path: Path) -> Dict[str, float]:
 
 
 def _parse_topr_dir_name(name: str) -> Optional[float]:
+    """Parses the top-r fraction value from a directory name (e.g., 'topr0.1')."""
     m = TOPR_DIR_RE.match(name)
     if not m:
         return None
@@ -105,6 +110,7 @@ def _parse_topr_dir_name(name: str) -> Optional[float]:
 
 
 def load_runs(graph_dir: Path, rank: int) -> List[RunData]:
+    """Loads all run data for a specific rank from the graph directory."""
     base = graph_dir / DATASET / f"r{rank}"
     if not base.exists():
         raise FileNotFoundError(f"Missing directory: {base}")
@@ -134,10 +140,12 @@ def load_runs(graph_dir: Path, rank: int) -> List[RunData]:
 
 
 def _final_train_loss(run: RunData) -> Optional[float]:
+    """Returns the training loss from the last recorded epoch."""
     return run.epoch_train_loss[-1][1] if run.epoch_train_loss else None
 
 
 def _metric_by_topr(runs: Iterable[RunData], metric: str) -> List[Tuple[float, float]]:
+    """Extracts a specific metric across multiple runs, indexed by their top-r value."""
     out: List[Tuple[float, float]] = []
     for r in runs:
         v = r.flops_stats.get(metric)
@@ -149,6 +157,7 @@ def _metric_by_topr(runs: Iterable[RunData], metric: str) -> List[Tuple[float, f
 
 
 def _maybe_set_style() -> None:
+    """Attempts to set a seaborn-like plot style if available."""
     try:
         import matplotlib.pyplot as plt
 

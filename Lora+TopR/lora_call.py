@@ -1,3 +1,8 @@
+"""
+Entry point for running LoRA experiments with Top-R gradient masking.
+Iterates through different combinations of ranks and top_r fractions
+to evaluate their impact on model performance and parameter efficiency.
+"""
 from lora_config.lora import lora_run, MemoryPeakPerEpochCallback
 
 num_train_epochs, learning_rate = 10, 2e-4
