@@ -1,0 +1,6 @@
+rank,peak_bytes,peak_gib,source
+4,1480589312,1.378906,total_program_memory.csv
+8,1470103552,1.369141,total_program_memory.csv
+16,1472200704,1.371094,total_program_memory.csv
+64,1501560832,1.398438,total_program_memory.csv
+128,1539309568,1.433594,total_program_memory.csv
