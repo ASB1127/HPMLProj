@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-import matplotlib.pyplot as plt
 from torch.profiler import profile, ProfilerActivity, record_function
 
 # --------------------------------------------------------
@@ -260,13 +259,19 @@ if device.startswith("cuda") and torch.cuda.is_available():
 # ============================================================
 # 📊 Plot comparison
 # ============================================================
-plt.figure(figsize=(7, 5))
-plt.plot(adam_losses, label=f"Adam ({adam_acc*100:.2f}% acc)", marker="o")
-plt.plot(rgp_losses, label=f"rSVDAdam ({rgp_acc*100:.2f}% acc)", marker="s")
-plt.xlabel("Epoch")
-plt.ylabel("Training Loss")
-plt.title("Training Loss: Adam vs rSVDAdam (with rSVD)")
-plt.legend()
-plt.grid(True)
-plt.show()
-plt.savefig("loss_comparison.png", dpi=300, bbox_inches="tight")
+# Import plotting function from consolidated plot.py
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "graph"))
+from plot import plot_adam_vs_rsvdadam_comparison
+
+# Use consolidated plotting function
+plot_adam_vs_rsvdadam_comparison(
+    adam_losses=adam_losses,
+    rsvd_losses=rgp_losses,
+    adam_acc=adam_acc,
+    rsvd_acc=rgp_acc,
+    output_path="loss_comparison.png",  # Save to current directory for backward compatibility
+    save=True,
+    show=True  # Show plot like before
+)
