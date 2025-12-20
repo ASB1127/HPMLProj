@@ -84,7 +84,29 @@ The goal is to achieve competitive accuracy on text classification benchmarks wh
 
 ---
 
-## 4. Reproducibility Instructions
+## 4. Plots
+
+### Memory Efficiency
+
+**Optimizer Memory Comparison (Adam vs rSVD Adam)**
+![Optimizer Memory Comparison](rSVD/graph/plots/optimizer_memory_comparison.png)
+### Training Performance
+
+**Training Loss: LoRA vs rSVD Across Ranks**
+![Loss Comparison Across Ranks](rSVD/graph/plots/loss_comparison_across_ranks.png)
+
+**Training Loss: LoRA vs rSVD Weight Reduction**
+![Loss Comparison Weight Reduction](rSVD/graph/plots/loss_comparison_across_ranks_weight_reduction.png)
+
+**Final Loss vs Rank Comparison**
+![Final Loss vs Rank](rSVD/graph/plots/final_loss_vs_rank.png)
+
+**Peak Memory vs Rank (LoRA vs rSVD vs rSVD Weight Reduction)**
+![Memory vs Rank](rSVD/graph/plots/memory_vs_rank.png)
+
+---
+
+## 5. Reproducibility Instructions
 
 ### A. Requirements
 
@@ -169,9 +191,7 @@ cd Lora/graph
 python plot.py
 
 cd rSVD/graph
-python multi-rank-plot.py
-python plot_memory_breakdown.py
-python plot_optimizer_memory.py
+python plot.py  # Consolidated plotting script (generates all plots)
 ```
 
 ---
@@ -205,7 +225,7 @@ cat epoch_peak_memory.csv
 
 ---
 
-## 5. Notes
+## 6. Notes
 
 ### Project Structure
 ```
